@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from subprocess import call
 from sys import maxsize
@@ -19,14 +20,24 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound="Entity")
 
 
+class DbOpenMode(Enum):
+    WRITE = 'create'
+    READ = 'read'
+
+
 class Database:
-    def __init__(self, path: Union[Path, str], config: Optional[Mapping[str, Any]] = None):
+    def __init__(
+            self,
+            path: Union[Path, str],
+            db_open_mode: DbOpenMode = DbOpenMode.READ,
+            config: Optional[Mapping[str, Any]] = None
+    ):
         self._path = Path(path)
+        self._db_open_mode = db_open_mode
         self._db = pynndb.Database()
         if config is None:
             config = {}
-        if "subdir" not in config:
-            config["subdir"] = False
+        config["readonly"] = self._db_open_mode == DbOpenMode.READ
         self._config = config
         self._db.configure(self._config)
         self._db.open(str(self._path))
@@ -196,7 +207,10 @@ class Database:
         self._path.unlink()
         call(["mdb_load", "-n", "-f", dump_file_path, self._path])
         dump_file_path.unlink()
-        self.__init__(path=self._path, config=self._config)
+        config = self._config.copy()
+        # config["map_size"] = self._path.stat().st_size
+        config["map_size"] = 2**34  # 16 GiB FIXME
+        self.__init__(path=self._path, db_open_mode=self._db_open_mode, config=config)
 
     def get_indexes(self, entity: Entity) -> List[str]:
         raise NotImplementedError("LegDB.get_index_name should be overridden in subclasses")
