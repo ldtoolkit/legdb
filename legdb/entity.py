@@ -121,7 +121,7 @@ class Edge(Entity):
 
     def load(self, txn: Optional[Transaction] = None) -> None:
         super().load(txn=txn)
-        if self.start is None or self.start == Node():
+        if (self.start is None or self.start == Node()) and self.start_id is not None:
             self.start = self._node_class.from_doc(self._db.node_table.get(oid=self.start_id, txn=txn))
-        if self.end is None or self.end == Node():
+        if (self.end is None or self.end == Node()) and self.end_id is not None:
             self.end = self._node_class.from_doc(self._db.node_table.get(oid=self.end_id, txn=txn))

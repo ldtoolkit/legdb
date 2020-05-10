@@ -192,12 +192,12 @@ class Database:
                 threads=threads,
                 txn=txn,
             )
-            self._db[what.table_name].close()
-            self._db[what.table_name].open(
-                compression_type=compression_type,
-                compression_level=compression_level,
-                txn=txn,
-            )
+        self._db[what.table_name].close()
+        self._db[what.table_name].open(
+            compression_type=compression_type,
+            compression_level=compression_level,
+            txn=txn,
+        )
 
     def vacuum(self) -> None:
         self._db.close()
