@@ -37,7 +37,7 @@ class Database:
         self._db = pynndb.Database()
         if config is None:
             config = {}
-        config["readonly"] = self._db_open_mode == DbOpenMode.READ
+        # config["readonly"] = self._db_open_mode == DbOpenMode.READ
         self._config = config
         self._db.configure(self._config)
         self._db.open(str(self._path))
