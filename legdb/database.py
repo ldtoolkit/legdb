@@ -3,9 +3,8 @@ from __future__ import annotations
 from enum import Enum
 from pathlib import Path
 from subprocess import call
-from sys import maxsize
 from types import MappingProxyType
-from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar
+from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable
 
 import pynndb
 
@@ -21,15 +20,15 @@ T = TypeVar("T", bound="Entity")
 
 
 class DbOpenMode(Enum):
-    WRITE = 'create'
-    READ = 'read'
+    CREATE = 'create'
+    READ_WRITE = 'read'
 
 
 class Database:
     def __init__(
             self,
             path: Union[Path, str],
-            db_open_mode: DbOpenMode = DbOpenMode.READ,
+            db_open_mode: DbOpenMode = DbOpenMode.READ_WRITE,
             config: Optional[Mapping[str, Any]] = None
     ):
         self._path = Path(path)
@@ -58,6 +57,9 @@ class Database:
             txn: Optional[Transaction] = None,
     ) -> pynndb.Index:
         return self._db[what.table_name].ensure(index_name=name, func=func, duplicates=duplicates, force=force, txn=txn)
+
+    def sync(self, force: bool = True):
+        self._db.sync(force=force)
 
     @property
     def read_transaction(self) -> Transaction:
@@ -98,7 +100,7 @@ class Database:
             oids_only: bool=False,
             inclusive: bool=True,
             txn: Optional[Transaction]=None) -> Generator[T, None, None]:
-        types = [type(x) for x in [lower, upper] if x is not None]
+        types = {type(x) for x in [lower, upper] if x is not None}
         if len(types) > 1:
             raise TypeError("lower and upper should be None or of same type")
         return_type,  = types
@@ -106,35 +108,47 @@ class Database:
             indexes_names = self.get_indexes(entity=lower)
         else:
             indexes_names = [index_name]
-        result_oids = None
         table = self._db[return_type.table_name]
-        for index_name in indexes_names:
-            oids = set()
-            for cursor in table.range(
-                index_name=index_name,
-                lower=lower.to_doc(),
-                upper=upper.to_doc(),
-                keyonly=True,
+        lower_doc = lower.to_doc()
+        upper_doc = upper.to_doc()
+
+        if len(indexes_names) == 1:
+            for doc in table.range(
+                index_name=indexes_names[0],
+                lower=lower_doc,
+                upper=upper_doc,
                 inclusive=inclusive,
                 txn=txn,
             ):
-                oids.add(cursor.val)
-            if result_oids is None:
-                result_oids = oids
-            else:
-                result_oids.intersection_update(oids)
-        if result_oids is None:
-            result_oids = []
-        if oids_only:
-            yield from result_oids
+                yield return_type.from_db_and_doc(db=self, doc=doc)
         else:
-            for oid in result_oids:
-                yield return_type.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
+            result_oids = None
+            for index_name in indexes_names:
+                oids = set()
+                for cursor in table.range(
+                    index_name=index_name,
+                    lower=lower_doc,
+                    upper=upper_doc,
+                    keyonly=True,
+                    inclusive=inclusive,
+                    txn=txn,
+                ):
+                    oids.add(cursor.val)
+                if result_oids is None:
+                    result_oids = oids
+                else:
+                    result_oids.intersection_update(oids)
+            if result_oids is None:
+                result_oids = []
+            if oids_only:
+                yield from result_oids
+            else:
+                for oid in result_oids:
+                    yield return_type.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
 
     def seek(
             self,
             entity: Entity,
-            limit: int = maxsize,
             index_name: Optional[str] = None,
             oids_only: bool = False,
             txn: Optional[Transaction] = None
@@ -143,28 +157,31 @@ class Database:
             indexes_names = self.get_indexes(entity=entity)
         else:
             indexes_names = [index_name]
-        result_oids = None
+
+        cls = type(entity)
+        doc = entity.to_doc()
         table = self._db[entity.table_name]
-        for index_name in indexes_names:
-            oids = set()
-            doc = entity.to_doc()
-            for cursor in table.seek(index_name=index_name, doc=doc, limit=limit, keyonly=True, txn=txn):
-                oids.add(cursor.val)
-            if result_oids is None:
-                result_oids = oids
-            else:
-                result_oids.intersection_update(oids)
-        if result_oids is None:
-            result_oids = []
-        if oids_only:
-            yield from result_oids
+
+        if len(indexes_names) == 1:
+            for doc in table.seek(index_name=indexes_names[0], doc=doc, txn=txn):
+                yield cls.from_db_and_doc(db=self, doc=doc)
         else:
-            cls = type(entity)
-            for oid in result_oids:
-                yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
-        # if index_name is None:
-        #     index_name = self.get_indexes(what=what, doc=doc)
-        # yield from self._db[what.value].seek(index_name=index_name, doc=doc, limit=limit, txn=txn)
+            result_oids = None
+            for index_name in indexes_names:
+                oids = set()
+                for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn):
+                    oids.add(cursor.val)
+                if result_oids is None:
+                    result_oids = oids
+                else:
+                    result_oids.intersection_update(oids)
+            if result_oids is None:
+                result_oids = []
+            if oids_only:
+                yield from result_oids
+            else:
+                for oid in result_oids:
+                    yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
 
     def seek_one(self, entity: Entity, index_name: Optional[str] = None, txn: Optional[Transaction] = None):
         if index_name is None:
@@ -174,6 +191,20 @@ class Database:
             db=self,
             doc=self._db[entity.table_name].seek_one(index_name=index_name, doc=entity.to_doc(), txn=txn),
         )
+
+    def find(
+            self,
+            what: Type[T],
+            index_name: Optional[str] = None,
+            expression: Optional[Callable[[T], bool]] = None,
+            txn: Optional[Transaction] = None,
+     ) -> Generator[T, None, None]:
+        table = self._db[what.table_name]
+        for doc in table.find(index_name=index_name, txn=txn):
+            entity = what.from_db_and_doc(db=self, doc=doc)
+            if callable(expression) and not expression(entity):
+                continue
+            yield entity
 
     def compress(
             self,
