@@ -42,7 +42,9 @@ class Database:
         self._db.open(str(self._path))
         with self._db.write_transaction as txn:
             self.node_table = self._db.table(entity.Node.table_name, txn=txn)
+            self.node_table.APPEND_MODE = False
             self.edge_table = self._db.table(entity.Edge.table_name, txn=txn)
+            self.edge_table.APPEND_MODE = False
             self.edge_table.ensure(IndexBy.start_id_end_id.value, "!{start_id}|{end_id}", duplicates=True, txn=txn)
             self.edge_table.ensure(IndexBy.start_id.value, "{start_id}", duplicates=True, txn=txn)
             self.edge_table.ensure(IndexBy.end_id.value, "{end_id}", duplicates=True, txn=txn)
