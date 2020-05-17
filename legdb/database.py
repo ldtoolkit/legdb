@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import dataclasses
 from enum import Enum
+from itertools import product
 from pathlib import Path
 from subprocess import call
 from types import MappingProxyType
@@ -11,9 +13,10 @@ import pynndb
 from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
 from legdb.index import IndexBy
+import legdb
 
 if TYPE_CHECKING:
-    from legdb.entity import Entity
+    from legdb.entity import Entity, Edge
 
 
 T = TypeVar("T", bound="Entity")
@@ -87,12 +90,29 @@ class Database:
             self,
             cls: Type[T],
             oid: Optional[bytes],
-            dict_params: Optional[Mapping] = MappingProxyType({}),
             txn: Optional[Transaction] = None
     ) -> Optional[T]:
         if oid is None:
             return None
-        return cls.from_db_and_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn), dict_params=dict_params)
+        return cls.from_db_and_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
+
+    def _expand_edge(self, edge: Edge, txn: Optional[Transaction] = None) -> List[Edge]:
+        if (edge.start is not None and not edge.start.is_bound
+                or edge.end is not None and not edge.end.is_bound):
+            if edge.start is not None and not edge.start.is_bound:
+                start_nodes = list(self.seek(edge.start, txn=txn))
+            else:
+                start_nodes = [edge.start]
+            if edge.end is not None and not edge.end.is_bound:
+                end_nodes = list(self.seek(edge.end, txn=txn))
+            else:
+                end_nodes = [edge.end]
+            return [
+                dataclasses.replace(edge, start=start, end=end, db=self)
+                for start, end in product(start_nodes, end_nodes)
+            ]
+        else:
+            return [edge]
 
     def range(
             self,
@@ -105,14 +125,14 @@ class Database:
         types = {type(x) for x in [lower, upper] if x is not None}
         if len(types) > 1:
             raise TypeError("lower and upper should be None or of same type")
-        return_type,  = types
+        cls,  = types
         if index_name is None:
             indexes_names = self.get_indexes(entity=lower)
         else:
             indexes_names = [index_name]
-        table = self._db[return_type.table_name]
-        lower_doc = lower.to_doc()
-        upper_doc = upper.to_doc()
+        table = self._db[cls.table_name]
+        lower_doc = lower.to_doc() if lower is not None else None
+        upper_doc = upper.to_doc() if upper is not None else None
 
         if len(indexes_names) == 1:
             for doc in table.range(
@@ -122,7 +142,7 @@ class Database:
                 inclusive=inclusive,
                 txn=txn,
             ):
-                yield return_type.from_db_and_doc(db=self, doc=doc)
+                yield cls.from_db_and_doc(db=self, doc=doc)
         else:
             result_oids = None
             for index_name in indexes_names:
@@ -146,7 +166,7 @@ class Database:
                 yield from result_oids
             else:
                 for oid in result_oids:
-                    yield return_type.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
+                    yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
 
     def seek(
             self,
@@ -155,35 +175,51 @@ class Database:
             oids_only: bool = False,
             txn: Optional[Transaction] = None
     ):
-        if index_name is None:
-            indexes_names = self.get_indexes(entity=entity)
-        else:
-            indexes_names = [index_name]
-
         cls = type(entity)
-        doc = entity.to_doc()
         table = self._db[entity.table_name]
 
-        if len(indexes_names) == 1:
-            for doc in table.seek(index_name=indexes_names[0], doc=doc, txn=txn):
-                yield cls.from_db_and_doc(db=self, doc=doc)
+        if isinstance(entity, legdb.entity.Edge):
+            entities = self._expand_edge(entity, txn=txn)
         else:
-            result_oids = None
+            entities = [entity]
+
+        if len(entities) == 1:
+            if index_name is None:
+                indexes_names = self.get_indexes(entity=entity)
+            else:
+                indexes_names = [index_name]
+            if len(indexes_names) == 1:
+                doc = entity.to_doc()
+                for doc in table.seek(index_name=indexes_names[0], doc=doc, txn=txn):
+                    yield cls.from_db_and_doc(db=self, doc=doc)
+                return
+
+        result_oids = set()
+
+        for entity in entities:
+            oids_for_entity = None
+            doc = entity.to_doc()
+            if index_name is None:
+                indexes_names = self.get_indexes(entity=entity)
+            else:
+                indexes_names = [index_name]
             for index_name in indexes_names:
                 oids = set()
                 for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn):
                     oids.add(cursor.val)
-                if result_oids is None:
-                    result_oids = oids
+                if oids_for_entity is None:
+                    oids_for_entity = oids
                 else:
-                    result_oids.intersection_update(oids)
-            if result_oids is None:
-                result_oids = []
-            if oids_only:
-                yield from result_oids
-            else:
-                for oid in result_oids:
-                    yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
+                    oids_for_entity.intersection_update(oids)
+            result_oids.update(oids_for_entity)
+
+        if result_oids is None:
+            result_oids = []
+        if oids_only:
+            yield from result_oids
+        else:
+            for oid in result_oids:
+                yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
 
     def seek_one(self, entity: Entity, index_name: Optional[str] = None, txn: Optional[Transaction] = None):
         if index_name is None:

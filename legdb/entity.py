@@ -33,67 +33,53 @@ class Entity(DataClassDictMixin):
 
     def __post_init__(self, db: Optional[Database]):
         self.connect(db)
-        if self._db is not None:
-            self.load()
+
+    @property
+    def is_bound(self):
+        return self._db is not None
 
     def connect(self, db: Optional[Database] = None) -> None:
         self._db = db
+        if self.is_bound:
+            self.load()
 
     def to_doc(self, dict_params: Optional[Mapping] = MappingProxyType({})) -> Doc:
         d = self.to_dict(**dict(DEFAULT_DICT_PARAMS, **dict_params))
         oid = d.pop("oid", None)
         for key in self._skip_on_to_doc:
             d.pop(key, None)
-        # LMDB doesn't allow to have empty keys, replace them with dash
-        for key, value in d.items():
-            if value == "":
-                d[key] = "-"
         result = Doc(d)
         result.oid = oid
         return result
 
     @classmethod
-    def from_doc(
-            cls: Type[T],
-            doc: Optional[Doc],
-            dict_params: Optional[Mapping] = MappingProxyType({}),
-    ) -> Optional[T]:
+    def from_doc(cls: Type[T], doc: Optional[Doc]) -> Optional[T]:
         if doc is None:
             return None
-        d = dict(doc)
-        # LMDB doesn't allow to have empty keys, replace dashes back to empty string
-        for key, value in d.items():
-            if value == "-":
-                d[key] = ""
-        result = cls.from_dict(d, **dict(DEFAULT_DICT_PARAMS, **dict_params))
+        result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
         result.oid = doc.oid
         return result
 
     @classmethod
-    def from_db_and_doc(
-            cls: Type[T],
-            db: Database,
-            doc: Optional[Doc],
-            dict_params: Optional[Mapping] = MappingProxyType({}),
-    ) -> Optional[T]:
+    def from_db_and_doc(cls: Type[T], db: Database, doc: Optional[Doc]) -> Optional[T]:
         if doc is None:
             return None
-        result = cls.from_doc(doc=doc, dict_params=dict_params)
+        result = cls.from_doc(doc=doc)
         result.connect(db)
         return result
 
-    def _raise_when_not_connected_to_database(self) -> None:
-        if self._db is None:
+    def _raise_when_unbound(self) -> None:
+        if not self.is_bound:
             raise ValueError(
                 f"{type(self)} not connected to the database; "
                 f"please use {type(self)}.connect method or retrieve it directly from database."
             )
 
     def load(self, txn: Optional[Transaction] = None) -> None:
-        self._raise_when_not_connected_to_database()
+        self._raise_when_unbound()
 
     def save(self, txn: Optional[Transaction] = None) -> None:
-        self._raise_when_not_connected_to_database()
+        self._raise_when_unbound()
         self._db.save(self, txn=txn)
 
 
