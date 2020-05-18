@@ -53,18 +53,11 @@ class Entity(DataClassDictMixin):
         return result
 
     @classmethod
-    def from_doc(cls: Type[T], doc: Optional[Doc]) -> Optional[T]:
+    def from_doc(cls: Type[T], doc: Optional[Doc], db: Optional[Database] = None) -> Optional[T]:
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
         result.oid = doc.oid
-        return result
-
-    @classmethod
-    def from_db_and_doc(cls: Type[T], db: Database, doc: Optional[Doc]) -> Optional[T]:
-        if doc is None:
-            return None
-        result = cls.from_doc(doc=doc)
         result.connect(db)
         return result
 

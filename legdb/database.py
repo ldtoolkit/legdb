@@ -14,6 +14,7 @@ from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
 from legdb.index import IndexBy
 import legdb
+from pynndb import Doc
 
 if TYPE_CHECKING:
     from legdb.entity import Entity, Edge
@@ -82,7 +83,7 @@ class Database:
             if return_oid:
                 return saved_doc.oid
             else:
-                return type(entity).from_db_and_doc(db=self, doc=saved_doc)
+                return type(entity).from_doc(db=self, doc=saved_doc)
         else:
             table.save(doc, txn=txn)
 
@@ -124,7 +125,7 @@ class Database:
                 inclusive=inclusive,
                 txn=txn,
             ):
-                yield cls.from_db_and_doc(db=self, doc=doc)
+                yield cls.from_doc(db=self, doc=doc)
         else:
             result_oids = None
             for index_name in indexes_names:
@@ -148,16 +149,16 @@ class Database:
                 yield from result_oids
             else:
                 for oid in result_oids:
-                    yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
+                    yield cls.from_doc(db=self, doc=table.get(oid, txn=txn))
 
     def _expand_edge(self, edge: Edge, txn: Optional[Transaction] = None) -> List[Edge]:
         def expand_start_and_end(edge):
             if edge.start is not None and not edge.start.is_bound:
-                start_node_ids = [oid.encode() for oid in self.seek(edge.start, oids_only=True, txn=txn)]
+                start_node_ids = list(self.seek(edge.start, oids_only=True, txn=txn))
             else:
                 start_node_ids = [edge.start_id]
             if edge.end is not None and not edge.end.is_bound:
-                end_node_ids = [oid.encode() for oid in self.seek(edge.end, oids_only=True, txn=txn)]
+                end_node_ids = list(self.seek(edge.end, oids_only=True, txn=txn))
             else:
                 end_node_ids = [edge.end_id]
             return [
@@ -186,64 +187,52 @@ class Database:
             oids_only: bool = False,
             txn: Optional[Transaction] = None
     ):
+        def get_indexes(entity: Entity, index_name: str) -> List[str]:
+            return self.get_indexes(entity=entity) if index_name is None else [index_name]
+
+        def get_oids(table: pynndb.Table, index_name: str, doc: Doc, txn: Optional[Transaction]):
+            return {cursor.val.encode() for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn)}
+
         cls = type(entity)
         table = self._db[entity.table_name]
-
-        if isinstance(entity, legdb.entity.Edge):
-            entities = self._expand_edge(entity, txn=txn)
-        else:
-            entities = [entity]
+        entities = self._expand_edge(entity, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
 
         if len(entities) == 1:
-            if index_name is None:
-                indexes_names = self.get_indexes(entity=entity)
-            else:
-                indexes_names = [index_name]
+            entity, = entities
+            indexes_names = get_indexes(entity=entity, index_name=index_name)
             if len(indexes_names) == 1:
                 doc = entity.to_doc()
                 index_name, = indexes_names
                 if oids_only:
-                    oids = set()
-                    for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn):
-                        oids.add(cursor.val)
-                    yield from oids
+                    yield from get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
                 else:
-                    for doc in table.seek(index_name=index_name, doc=doc, txn=txn):
-                        yield cls.from_db_and_doc(db=self, doc=doc)
+                    yield from (
+                        cls.from_doc(db=self, doc=doc) for doc in table.seek(index_name=index_name, doc=doc, txn=txn)
+                    )
                 return
 
         result_oids = set()
-
         for entity in entities:
             oids_for_entity = None
             doc = entity.to_doc()
-            if index_name is None:
-                indexes_names = self.get_indexes(entity=entity)
-            else:
-                indexes_names = [index_name]
+            indexes_names = get_indexes(entity=entity, index_name=index_name)
             for i in indexes_names:
-                oids = set()
-                for cursor in table.seek(index_name=i, doc=doc, keyonly=True, txn=txn):
-                    oids.add(cursor.val)
+                oids = get_oids(table=table, index_name=i, doc=doc, txn=txn)
                 if oids_for_entity is None:
                     oids_for_entity = oids
                 else:
                     oids_for_entity.intersection_update(oids)
             result_oids.update(oids_for_entity)
-
-        if result_oids is None:
-            result_oids = []
         if oids_only:
             yield from result_oids
         else:
-            for oid in result_oids:
-                yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
+            yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in result_oids)
 
     def seek_one(self, entity: Entity, index_name: Optional[str] = None, txn: Optional[Transaction] = None):
         if index_name is None:
             index_name = self.get_indexes(entity=entity)[0]
         cls = type(entity)
-        return cls.from_db_and_doc(
+        return cls.from_doc(
             db=self,
             doc=self._db[entity.table_name].seek_one(index_name=index_name, doc=entity.to_doc(), txn=txn),
         )
