@@ -99,9 +99,9 @@ class Edge(Entity):
     _node_class = None
 
     def __post_init__(self, db: Optional[Database] = None):
-        if self.start is not None:
+        if self.start is not None and self.start_id is None:
             self.start_id = self.start.oid
-        if self.end is not None:
+        if self.end is not None and self.end_id is None:
             self.end_id = self.end.oid
         super().__post_init__(db=db)
 

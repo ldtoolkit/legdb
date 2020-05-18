@@ -96,24 +96,6 @@ class Database:
             return None
         return cls.from_db_and_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
 
-    def _expand_edge(self, edge: Edge, txn: Optional[Transaction] = None) -> List[Edge]:
-        if (edge.start is not None and not edge.start.is_bound
-                or edge.end is not None and not edge.end.is_bound):
-            if edge.start is not None and not edge.start.is_bound:
-                start_nodes = list(self.seek(edge.start, txn=txn))
-            else:
-                start_nodes = [edge.start]
-            if edge.end is not None and not edge.end.is_bound:
-                end_nodes = list(self.seek(edge.end, txn=txn))
-            else:
-                end_nodes = [edge.end]
-            return [
-                dataclasses.replace(edge, start=start, end=end, db=self)
-                for start, end in product(start_nodes, end_nodes)
-            ]
-        else:
-            return [edge]
-
     def range(
             self,
             lower: Optional[T]=None,
@@ -168,6 +150,35 @@ class Database:
                 for oid in result_oids:
                     yield cls.from_db_and_doc(db=self, doc=table.get(oid, txn=txn))
 
+    def _expand_edge(self, edge: Edge, txn: Optional[Transaction] = None) -> List[Edge]:
+        def expand_start_and_end(edge):
+            if edge.start is not None and not edge.start.is_bound:
+                start_node_ids = [oid.encode() for oid in self.seek(edge.start, oids_only=True, txn=txn)]
+            else:
+                start_node_ids = [edge.start_id]
+            if edge.end is not None and not edge.end.is_bound:
+                end_node_ids = [oid.encode() for oid in self.seek(edge.end, oids_only=True, txn=txn)]
+            else:
+                end_node_ids = [edge.end_id]
+            return [
+                dataclasses.replace(edge, start=None, end=None, start_id=start_id, end_id=end_id, db=None)
+                for start_id, end_id in product(start_node_ids, end_node_ids)
+            ]
+
+        # If we had something like Edge(Node(...))
+        if isinstance(edge.oid, legdb.entity.Node):
+            start_or_end = edge.oid
+            edge.oid = None
+            result = []
+            result.extend(expand_start_and_end(dataclasses.replace(edge, start=start_or_end, db=None)))
+            result.extend(expand_start_and_end(dataclasses.replace(edge, end=start_or_end, db=None)))
+            return result
+        elif (edge.start is not None and not edge.start.is_bound
+              or edge.end is not None and not edge.end.is_bound):
+            return expand_start_and_end(edge)
+        else:
+            return [edge]
+
     def seek(
             self,
             entity: Entity,
@@ -190,8 +201,15 @@ class Database:
                 indexes_names = [index_name]
             if len(indexes_names) == 1:
                 doc = entity.to_doc()
-                for doc in table.seek(index_name=indexes_names[0], doc=doc, txn=txn):
-                    yield cls.from_db_and_doc(db=self, doc=doc)
+                index_name, = indexes_names
+                if oids_only:
+                    oids = set()
+                    for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn):
+                        oids.add(cursor.val)
+                    yield from oids
+                else:
+                    for doc in table.seek(index_name=index_name, doc=doc, txn=txn):
+                        yield cls.from_db_and_doc(db=self, doc=doc)
                 return
 
         result_oids = set()
@@ -203,9 +221,9 @@ class Database:
                 indexes_names = self.get_indexes(entity=entity)
             else:
                 indexes_names = [index_name]
-            for index_name in indexes_names:
+            for i in indexes_names:
                 oids = set()
-                for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn):
+                for cursor in table.seek(index_name=i, doc=doc, keyonly=True, txn=txn):
                     oids.add(cursor.val)
                 if oids_for_entity is None:
                     oids_for_entity = oids
