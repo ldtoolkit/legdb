@@ -8,6 +8,8 @@ license = "Apache-2.0"
 [tool.poetry.dependencies]
 python = "^3.6"
 joblib = "^0.15.1"
+more-itertools = "^8.3.0"
+ordered-set = "^4.0.1"
 
 [tool.poetry.dev-dependencies]
 

@@ -12,6 +12,8 @@ from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING
 
 import pynndb
 from joblib import Parallel, delayed
+from more_itertools.more import ichunked, divide
+from ordered_set import OrderedSet
 
 from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
@@ -42,6 +44,9 @@ def wrap_reader_yield(func: Callable) -> Callable:
     return wrapped
 
 
+PAGE_SIZE = 10000
+
+
 class Database:
     def __init__(
             self,
@@ -55,6 +60,7 @@ class Database:
         self._db = pynndb.Database()
         if config is None:
             config = {}
+        config.setdefault("max_readers", 2048)
         # config["readonly"] = self._db_open_mode == DbOpenMode.READ
         self._config = config
         self._db.configure(self._config)
@@ -170,14 +176,14 @@ class Database:
                 for oid in result_oids:
                     yield cls.from_doc(db=self, doc=table.get(oid, txn=txn))
 
-    def _expand_edge(self, edge: Edge, txn: Optional[Transaction] = None) -> List[Edge]:
+    def _expand_edge(self, edge: Edge, page_size: int = PAGE_SIZE, txn: Optional[Transaction] = None) -> List[Edge]:
         def expand_start_and_end(edge):
             if edge.start is not None and not edge.start.is_bound:
-                start_node_ids = list(self.seek(edge.start, oids_only=True, txn=txn))
+                start_node_ids = list(self.seek(edge.start, page_size=page_size, oids_only=True, txn=txn))
             else:
                 start_node_ids = [edge.start_id]
             if edge.end is not None and not edge.end.is_bound:
-                end_node_ids = list(self.seek(edge.end, oids_only=True, txn=txn))
+                end_node_ids = list(self.seek(edge.end, page_size=page_size, oids_only=True, txn=txn))
             else:
                 end_node_ids = [edge.end_id]
             return [
@@ -203,6 +209,9 @@ class Database:
             self,
             entity: Entity,
             index_name: Optional[str] = None,
+            *,
+            page_number: int = 0,
+            page_size: int = PAGE_SIZE,
             oids_only: bool = False,
             txn: Optional[Transaction] = None
     ):
@@ -210,7 +219,13 @@ class Database:
             return self.get_indexes(entity=entity) if index_name is None else [index_name]
 
         def get_oids(table: pynndb.Table, index_name: str, doc: Doc, txn: Optional[Transaction]):
-            return {cursor.val.encode() for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn)}
+            return {cursor.val.encode() for cursor in table.seek(
+                index_name=index_name,
+                doc=doc,
+                limit=page_size,
+                keyonly=True,
+                txn=txn,
+            )}
 
         def connect(entities: List[Entity]) -> None:
             for entity in entities:
@@ -219,10 +234,6 @@ class Database:
         def disconnect(entities: List[Entity]) -> None:
             for entity in entities:
                 entity.disconnect()
-
-        def chunks(a: List, n: int) -> Generator[List, None, None]:
-            k, m = divmod(len(a), n)
-            return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
 
         def seek_multiple_worker(
                 database_cls: Type[Database],
@@ -246,49 +257,53 @@ class Database:
 
         cls = type(entity)
         table = self._db.table(entity.table_name, txn=txn)
-        entities = self._expand_edge(entity, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
+        entities = self._expand_edge(entity, page_size=page_size, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
 
         if len(entities) == 1:
             entity, = entities
+            oids_for_entity = None
+            doc = entity.to_doc()
             indexes_names = get_indexes(entity=entity, index_name=index_name)
-            if len(indexes_names) == 1:
-                doc = entity.to_doc()
-                index_name, = indexes_names
-                if oids_only:
-                    yield from get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
+            for index_name in indexes_names:
+                oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
+                if oids_for_entity is None:
+                    oids_for_entity = oids
                 else:
-                    yield from (
-                        cls.from_doc(db=self, doc=doc, txn=txn)
-                        for doc in table.seek(index_name=index_name, doc=doc, txn=txn)
-                    )
+                    oids_for_entity.intersection_update(oids)
+            if oids_only:
+                yield from oids_for_entity
             else:
-                oids_for_entity = None
-                doc = entity.to_doc()
-                indexes_names = get_indexes(entity=entity, index_name=index_name)
-                for index_name in indexes_names:
-                    oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
-                    if oids_for_entity is None:
-                        oids_for_entity = oids
-                    else:
-                        oids_for_entity.intersection_update(oids)
-                if oids_only:
-                    yield from oids_for_entity
-                else:
-                    yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids_for_entity)
+                yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids_for_entity)
             return
 
         disconnect(entities)
-        entities_chunks = list(chunks(entities, self._n_jobs))
-        result_with_duplicates = list(itertools.chain(
-            *self._workers(delayed(seek_multiple_worker)(
-                database_cls=type(self),
-                database_path=self._path,
-                database_config=self._config,
-                entities=entities_chunk,
-                index_name=index_name,
-                oids_only=oids_only,
-            ) for entities_chunk in entities_chunks)))
-        result = list({entity.oid: entity for entity in result_with_duplicates}.values())
+        chunks = ichunked(entities, page_size)
+        oids = OrderedSet()
+        offset = page_number * page_size
+        last = offset + page_size
+        result = []
+        for iteration_chunk in chunks:
+            workers_chunks = divide(self._n_jobs, list(iteration_chunk))
+            iteration_result = list(itertools.chain(
+                *self._workers(delayed(seek_multiple_worker)(
+                    database_cls=type(self),
+                    database_path=self._path,
+                    database_config=self._config,
+                    entities=entities_chunk,
+                    index_name=index_name,
+                    oids_only=oids_only,
+                ) for entities_chunk in workers_chunks)))
+            for entity in iteration_result:
+                old_len = len(oids)
+                oids.add(entity.oid)
+                new_len = len(oids)
+                if old_len < new_len:
+                    if offset <= new_len <= last:
+                        result.append(entity)
+                    if len(result) == page_size:
+                        break
+            if len(result) == page_size:
+                break
         connect(result)
         yield from result
 
