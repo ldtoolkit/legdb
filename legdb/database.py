@@ -47,7 +47,8 @@ class Database:
             self,
             path: Union[Path, str],
             db_open_mode: DbOpenMode = DbOpenMode.READ_WRITE,
-            config: Optional[Mapping[str, Any]] = None
+            config: Optional[Mapping[str, Any]] = None,
+            n_jobs: int = len(os.sched_getaffinity(0)),
     ):
         self._path = Path(path)
         self._db_open_mode = db_open_mode
@@ -58,6 +59,9 @@ class Database:
         self._config = config
         self._db.configure(self._config)
         self._db.open(str(self._path))
+        self._n_jobs = n_jobs
+        if n_jobs != 0:
+            self._workers = Parallel(n_jobs=self._n_jobs)
         with self._db.write_transaction as txn:
             self.node_table = self._db.table(entity.Node.table_name, txn=txn)
             self.node_table.APPEND_MODE = False
@@ -228,7 +232,7 @@ class Database:
                 index_name: Optional[str],
                 oids_only: bool = False,
         ) -> List[Entity]:
-            db = database_cls(path=database_path, db_open_mode=DbOpenMode.READ_WRITE, config=database_config)
+            db = database_cls(path=database_path, db_open_mode=DbOpenMode.READ_WRITE, config=database_config, n_jobs=0)
             with db.read_transaction as txn:
                 result = list(itertools.chain(*(
                     db.seek(
@@ -274,10 +278,9 @@ class Database:
             return
 
         disconnect(entities)
-        n_jobs = len(os.sched_getaffinity(0))
-        entities_chunks = list(chunks(entities, n_jobs))
+        entities_chunks = list(chunks(entities, self._n_jobs))
         result_with_duplicates = list(itertools.chain(
-            *Parallel(n_jobs=n_jobs)(delayed(seek_multiple_worker)(
+            *self._workers(delayed(seek_multiple_worker)(
                 database_cls=type(self),
                 database_path=self._path,
                 database_config=self._config,
