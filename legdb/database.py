@@ -97,7 +97,7 @@ class Database:
             if return_oid:
                 return saved_doc.oid
             else:
-                return type(entity).from_doc(db=self, doc=saved_doc)
+                return type(entity).from_doc(db=self, doc=saved_doc, txn=txn)
         else:
             table.save(doc, txn=txn)
 
@@ -140,7 +140,7 @@ class Database:
                 inclusive=inclusive,
                 txn=txn,
             ):
-                yield cls.from_doc(db=self, doc=doc)
+                yield cls.from_doc(db=self, doc=doc, txn=txn)
         else:
             result_oids = None
             for index_name in indexes_names:
@@ -241,7 +241,7 @@ class Database:
                 return result
 
         cls = type(entity)
-        table = self._db[entity.table_name]
+        table = self._db.table(entity.table_name, txn=txn)
         entities = self._expand_edge(entity, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
 
         if len(entities) == 1:
@@ -254,7 +254,8 @@ class Database:
                     yield from get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
                 else:
                     yield from (
-                        cls.from_doc(db=self, doc=doc) for doc in table.seek(index_name=index_name, doc=doc, txn=txn)
+                        cls.from_doc(db=self, doc=doc, txn=txn)
+                        for doc in table.seek(index_name=index_name, doc=doc, txn=txn)
                     )
             else:
                 oids_for_entity = None
@@ -295,6 +296,7 @@ class Database:
         return cls.from_doc(
             db=self,
             doc=self._db[entity.table_name].seek_one(index_name=index_name, doc=entity.to_doc(), txn=txn),
+            txn=txn,
         )
 
     def find(

@@ -38,10 +38,10 @@ class Entity(DataClassDictMixin):
     def is_bound(self):
         return self._db is not None
 
-    def connect(self, db: Optional[Database] = None) -> None:
+    def connect(self, db: Optional[Database] = None, txn: Optional[Transaction] = None) -> None:
         self._db = db
         if self.is_bound:
-            self.load()
+            self.load(txn=txn)
 
     def disconnect(self) -> None:
         self._db = None
@@ -56,12 +56,17 @@ class Entity(DataClassDictMixin):
         return result
 
     @classmethod
-    def from_doc(cls: Type[T], doc: Optional[Doc], db: Optional[Database] = None) -> Optional[T]:
+    def from_doc(
+            cls: Type[T],
+            doc: Optional[Doc],
+            db: Optional[Database] = None,
+            txn: Optional[Transaction] = None
+    ) -> Optional[T]:
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
         result.oid = doc.oid
-        result.connect(db)
+        result.connect(db, txn=txn)
         return result
 
     def _raise_when_unbound(self) -> None:
@@ -105,6 +110,6 @@ class Edge(Entity):
     def load(self, txn: Optional[Transaction] = None) -> None:
         super().load(txn=txn)
         if (self.start is None or self.start == Node()) and self.start_id is not None:
-            self.start = self._node_class.from_doc(self._db.node_table.get(oid=self.start_id, txn=txn))
+            self.start = self._node_class.from_doc(self._db.node_table.get(oid=self.start_id, txn=txn), txn=txn)
         if (self.end is None or self.end == Node()) and self.end_id is not None:
-            self.end = self._node_class.from_doc(self._db.node_table.get(oid=self.end_id, txn=txn))
+            self.end = self._node_class.from_doc(self._db.node_table.get(oid=self.end_id, txn=txn), txn=txn)
