@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import dataclasses
+import functools
 from enum import Enum
 from itertools import product
 from pathlib import Path
 from subprocess import call
-from types import MappingProxyType
 from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable
 
 import pynndb
@@ -26,6 +26,17 @@ T = TypeVar("T", bound="Entity")
 class DbOpenMode(Enum):
     CREATE = 'create'
     READ_WRITE = 'read'
+
+
+def wrap_reader_yield(func: Callable) -> Callable:
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs) -> Generator[Any, None, None]:
+        if 'txn' in kwargs and kwargs['txn']:
+            yield from func(*args, **kwargs)
+        else:
+            with args[0].read_transaction as kwargs['txn']:
+                yield from func(*args, **kwargs)
+    return wrapped
 
 
 class Database:
@@ -95,8 +106,9 @@ class Database:
     ) -> Optional[T]:
         if oid is None:
             return None
-        return cls.from_db_and_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
+        return cls.from_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
 
+    @wrap_reader_yield
     def range(
             self,
             lower: Optional[T]=None,
@@ -180,6 +192,7 @@ class Database:
         else:
             return [edge]
 
+    @wrap_reader_yield
     def seek(
             self,
             entity: Entity,
@@ -246,7 +259,7 @@ class Database:
      ) -> Generator[T, None, None]:
         table = self._db[what.table_name]
         for doc in table.find(index_name=index_name, txn=txn):
-            entity = what.from_db_and_doc(db=self, doc=doc)
+            entity = what.from_doc(db=self, doc=doc)
             if callable(expression) and not expression(entity):
                 continue
             yield entity
