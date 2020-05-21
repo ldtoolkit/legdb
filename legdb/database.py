@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import functools
+import itertools
+import os
 from enum import Enum
 from itertools import product
 from pathlib import Path
@@ -9,6 +11,7 @@ from subprocess import call
 from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable
 
 import pynndb
+from joblib import Parallel, delayed
 
 from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
@@ -178,13 +181,12 @@ class Database:
                 for start_id, end_id in product(start_node_ids, end_node_ids)
             ]
 
-        # If we had something like Edge(Node(...))
-        if isinstance(edge.oid, legdb.entity.Node):
-            start_or_end = edge.oid
-            edge.oid = None
+        if edge.has is not None and not edge.has.is_bound:
             result = []
-            result.extend(expand_start_and_end(dataclasses.replace(edge, start=start_or_end, db=None)))
-            result.extend(expand_start_and_end(dataclasses.replace(edge, end=start_or_end, db=None)))
+            has = edge.has
+            edge.has = None
+            result.extend(expand_start_and_end(dataclasses.replace(edge, start=has, db=None)))
+            result.extend(expand_start_and_end(dataclasses.replace(edge, end=has, db=None)))
             return result
         elif (edge.start is not None and not edge.start.is_bound
               or edge.end is not None and not edge.end.is_bound):
@@ -206,6 +208,38 @@ class Database:
         def get_oids(table: pynndb.Table, index_name: str, doc: Doc, txn: Optional[Transaction]):
             return {cursor.val.encode() for cursor in table.seek(index_name=index_name, doc=doc, keyonly=True, txn=txn)}
 
+        def connect(entities: List[Entity]) -> None:
+            for entity in entities:
+                entity.connect(self)
+
+        def disconnect(entities: List[Entity]) -> None:
+            for entity in entities:
+                entity.disconnect()
+
+        def chunks(a: List, n: int) -> Generator[List, None, None]:
+            k, m = divmod(len(a), n)
+            return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
+
+        def seek_multiple_worker(
+                database_cls: Type[Database],
+                database_path: Path,
+                database_config: Mapping[str, Any],
+                entities: List[Entity],
+                index_name: Optional[str],
+                oids_only: bool = False,
+        ) -> List[Entity]:
+            db = database_cls(path=database_path, db_open_mode=DbOpenMode.READ_WRITE, config=database_config)
+            with db.read_transaction as txn:
+                result = list(itertools.chain(*(
+                    db.seek(
+                        entity=entity,
+                        index_name=index_name,
+                        oids_only=oids_only,
+                        txn=txn,
+                    ) for entity in entities)))
+                disconnect(result)
+                return result
+
         cls = type(entity)
         table = self._db[entity.table_name]
         entities = self._expand_edge(entity, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
@@ -222,24 +256,37 @@ class Database:
                     yield from (
                         cls.from_doc(db=self, doc=doc) for doc in table.seek(index_name=index_name, doc=doc, txn=txn)
                     )
-                return
-
-        result_oids = set()
-        for entity in entities:
-            oids_for_entity = None
-            doc = entity.to_doc()
-            indexes_names = get_indexes(entity=entity, index_name=index_name)
-            for i in indexes_names:
-                oids = get_oids(table=table, index_name=i, doc=doc, txn=txn)
-                if oids_for_entity is None:
-                    oids_for_entity = oids
+            else:
+                oids_for_entity = None
+                doc = entity.to_doc()
+                indexes_names = get_indexes(entity=entity, index_name=index_name)
+                for index_name in indexes_names:
+                    oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
+                    if oids_for_entity is None:
+                        oids_for_entity = oids
+                    else:
+                        oids_for_entity.intersection_update(oids)
+                if oids_only:
+                    yield from oids_for_entity
                 else:
-                    oids_for_entity.intersection_update(oids)
-            result_oids.update(oids_for_entity)
-        if oids_only:
-            yield from result_oids
-        else:
-            yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in result_oids)
+                    yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids_for_entity)
+            return
+
+        disconnect(entities)
+        n_jobs = len(os.sched_getaffinity(0))
+        entities_chunks = list(chunks(entities, n_jobs))
+        result_with_duplicates = list(itertools.chain(
+            *Parallel(n_jobs=n_jobs)(delayed(seek_multiple_worker)(
+                database_cls=type(self),
+                database_path=self._path,
+                database_config=self._config,
+                entities=entities_chunk,
+                index_name=index_name,
+                oids_only=oids_only,
+            ) for entities_chunk in entities_chunks)))
+        result = list({entity.oid: entity for entity in result_with_duplicates}.values())
+        connect(result)
+        yield from result
 
     def seek_one(self, entity: Entity, index_name: Optional[str] = None, txn: Optional[Transaction] = None):
         if index_name is None:

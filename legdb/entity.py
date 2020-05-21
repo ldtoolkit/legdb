@@ -43,6 +43,9 @@ class Entity(DataClassDictMixin):
         if self.is_bound:
             self.load()
 
+    def disconnect(self) -> None:
+        self._db = None
+
     def to_doc(self, dict_params: Optional[Mapping] = MappingProxyType({})) -> Doc:
         d = self.to_dict(**dict(DEFAULT_DICT_PARAMS, **dict_params))
         oid = d.pop("oid", None)
@@ -87,6 +90,7 @@ class Edge(Entity):
     end: Optional[Node] = None
     start_id: Optional[bytes] = field(default=None, repr=False)
     end_id: Optional[bytes] = field(default=None, repr=False)
+    has: Optional[Node] = field(default=None, repr=False)
     table_name = "edge"
     _skip_on_to_doc = ["start", "end"]
     _node_class = None
