@@ -1,28 +1,20 @@
 from __future__ import annotations
 
-import dataclasses
 import functools
-import itertools
 import os
 from enum import Enum
-from itertools import product
 from pathlib import Path
-from subprocess import call
 from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable
 
 import pynndb
-from joblib import Parallel, delayed
-from more_itertools.more import ichunked, divide
-from ordered_set import OrderedSet
+from joblib import Parallel
 
 from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
 from legdb.index import IndexBy
-import legdb
-from pynndb import Doc
 
 if TYPE_CHECKING:
-    from legdb.entity import Entity, Edge
+    from legdb.entity import Entity
 
 
 T = TypeVar("T", bound="Entity")
@@ -42,9 +34,6 @@ def wrap_reader_yield(func: Callable) -> Callable:
             with args[0].read_transaction as kwargs['txn']:
                 yield from func(*args, **kwargs)
     return wrapped
-
-
-PAGE_SIZE = 10000
 
 
 class Database:
@@ -109,255 +98,6 @@ class Database:
         else:
             table.save(doc, txn=txn)
 
-    def get(
-            self,
-            cls: Type[T],
-            oid: Optional[bytes],
-            txn: Optional[Transaction] = None
-    ) -> Optional[T]:
-        if oid is None:
-            return None
-        return cls.from_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
-
-    @wrap_reader_yield
-    def range(
-            self,
-            lower: Optional[T]=None,
-            upper: Optional[T]=None,
-            index_name: Optional[str]=None,
-            oids_only: bool=False,
-            inclusive: bool=True,
-            txn: Optional[Transaction]=None) -> Generator[T, None, None]:
-        types = {type(x) for x in [lower, upper] if x is not None}
-        if len(types) > 1:
-            raise TypeError("lower and upper should be None or of same type")
-        cls,  = types
-        if index_name is None:
-            indexes_names = self.get_indexes(entity=lower)
-        else:
-            indexes_names = [index_name]
-        table = self._db[cls.table_name]
-        lower_doc = lower.to_doc() if lower is not None else None
-        upper_doc = upper.to_doc() if upper is not None else None
-
-        if len(indexes_names) == 1:
-            for doc in table.range(
-                index_name=indexes_names[0],
-                lower=lower_doc,
-                upper=upper_doc,
-                inclusive=inclusive,
-                txn=txn,
-            ):
-                yield cls.from_doc(db=self, doc=doc, txn=txn)
-        else:
-            result_oids = None
-            for index_name in indexes_names:
-                oids = set()
-                for cursor in table.range(
-                    index_name=index_name,
-                    lower=lower_doc,
-                    upper=upper_doc,
-                    keyonly=True,
-                    inclusive=inclusive,
-                    txn=txn,
-                ):
-                    oids.add(cursor.val)
-                if result_oids is None:
-                    result_oids = oids
-                else:
-                    result_oids.intersection_update(oids)
-            if result_oids is None:
-                result_oids = []
-            if oids_only:
-                yield from result_oids
-            else:
-                for oid in result_oids:
-                    yield cls.from_doc(db=self, doc=table.get(oid, txn=txn))
-
-    def _expand_edge(
-            self,
-            edge: Edge,
-            page_number: int = 0,
-            page_size: int = PAGE_SIZE,
-            txn: Optional[Transaction] = None
-    ) -> List[Edge]:
-        def expand_start_and_end(edge: Edge, page_number: int, page_size: int):
-            if edge.start is not None and not edge.start.is_bound:
-                start_node_ids = self.seek(
-                    edge.start,
-                    page_number=page_number,
-                    page_size=page_size,
-                    oids_only=True,
-                    txn=txn,
-                )
-            else:
-                start_node_ids = [edge.start_id]
-            if edge.end is not None and not edge.end.is_bound:
-                end_node_ids = self.seek(
-                    edge.end,
-                    page_number=page_number,
-                    page_size=page_size,
-                    oids_only=True,
-                    txn=txn,
-                )
-            else:
-                end_node_ids = [edge.end_id]
-            return [
-                dataclasses.replace(edge, start=None, end=None, start_id=start_id, end_id=end_id, db=None)
-                for start_id, end_id in product(start_node_ids, end_node_ids)
-            ]
-
-        if edge.has is not None and not edge.has.is_bound:
-            result = []
-            has = edge.has
-            edge.has = None
-            result.extend(expand_start_and_end(
-                edge=dataclasses.replace(edge, start=has, db=None),
-                page_number=page_number,
-                page_size=page_size // 2,
-            ))
-            result.extend(expand_start_and_end(
-                edge=dataclasses.replace(edge, end=has, db=None),
-                page_number=page_number,
-                page_size=page_size // 2,
-            ))
-            return result
-        elif (edge.start is not None and not edge.start.is_bound
-              or edge.end is not None and not edge.end.is_bound):
-            return expand_start_and_end(edge=edge, page_number=page_number, page_size=page_size)
-        else:
-            return [edge]
-
-    @wrap_reader_yield
-    def seek(
-            self,
-            entity: Entity,
-            index_name: Optional[str] = None,
-            *,
-            page_number: int = 0,
-            page_size: int = PAGE_SIZE,
-            oids_only: bool = False,
-            txn: Optional[Transaction] = None
-    ):
-        def get_indexes(entity: Entity, index_name: str) -> List[str]:
-            return self.get_indexes(entity=entity) if index_name is None else [index_name]
-
-        def get_oids(table: pynndb.Table, index_name: str, doc: Doc, txn: Optional[Transaction]):
-            return {cursor.val.encode() for cursor in table.seek(
-                index_name=index_name,
-                doc=doc,
-                limit=page_size,
-                keyonly=True,
-                txn=txn,
-            )}
-
-        def connect(entities: List[Entity]) -> None:
-            for entity in entities:
-                entity.connect(self)
-
-        def disconnect(entities: List[Entity]) -> None:
-            for entity in entities:
-                entity.disconnect()
-
-        def seek_one(entity: Entity, index_name: Optional[str], oids_only: bool = False) -> List[Entity]:
-            oids = None
-            doc = entity.to_doc()
-            indexes_names = get_indexes(entity=entity, index_name=index_name)
-            for index_name in indexes_names:
-                oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
-                if oids is None:
-                    oids = oids
-                else:
-                    oids.intersection_update(oids)
-            if oids_only:
-                yield from oids
-            else:
-                yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids)
-
-        def seek_multiple_worker(
-                database_cls: Type[Database],
-                database_path: Path,
-                database_config: Mapping[str, Any],
-                entities: List[Entity],
-                index_name: Optional[str],
-                oids_only: bool = False,
-        ) -> List[Entity]:
-            db = database_cls(path=database_path, db_open_mode=DbOpenMode.READ_WRITE, config=database_config, n_jobs=0)
-            with db.read_transaction as txn:
-                result = list(itertools.chain(*(
-                    db.seek(
-                        entity=entity,
-                        index_name=index_name,
-                        oids_only=oids_only,
-                        txn=txn,
-                    ) for entity in entities)))
-                disconnect(result)
-                return result
-
-        cls = type(entity)
-        table = self._db.table(entity.table_name, txn=txn)
-
-        entities = self._expand_edge(entity, page_number=page_number, page_size=page_size, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
-
-        if len(entities) == 1:
-            yield from seek_one(entity=entities[0], index_name=index_name, oids_only=oids_only)
-            return
-
-        disconnect(entities)
-        chunks = ichunked(entities, page_size)
-        oids = OrderedSet()
-        offset = page_number * page_size
-        last = offset + page_size
-        result = []
-        for iteration_chunk in chunks:
-            workers_chunks = divide(self._n_jobs, list(iteration_chunk))
-            iteration_result = list(itertools.chain(
-                *self._workers(delayed(seek_multiple_worker)(
-                    database_cls=type(self),
-                    database_path=self._path,
-                    database_config=self._config,
-                    entities=entities_chunk,
-                    index_name=index_name,
-                    oids_only=oids_only,
-                ) for entities_chunk in workers_chunks)))
-            for entity in iteration_result:
-                old_len = len(oids)
-                oids.add(entity.oid)
-                new_len = len(oids)
-                if old_len < new_len:
-                    if offset <= new_len <= last:
-                        result.append(entity)
-                    if len(result) == page_size:
-                        break
-            if len(result) == page_size:
-                break
-        connect(result)
-        yield from result
-
-    def seek_one(self, entity: Entity, index_name: Optional[str] = None, txn: Optional[Transaction] = None):
-        if index_name is None:
-            index_name = self.get_indexes(entity=entity)[0]
-        cls = type(entity)
-        return cls.from_doc(
-            db=self,
-            doc=self._db[entity.table_name].seek_one(index_name=index_name, doc=entity.to_doc(), txn=txn),
-            txn=txn,
-        )
-
-    def find(
-            self,
-            what: Type[T],
-            index_name: Optional[str] = None,
-            expression: Optional[Callable[[T], bool]] = None,
-            txn: Optional[Transaction] = None,
-     ) -> Generator[T, None, None]:
-        table = self._db[what.table_name]
-        for doc in table.find(index_name=index_name, txn=txn):
-            entity = what.from_doc(db=self, doc=doc)
-            if callable(expression) and not expression(entity):
-                continue
-            yield entity
-
     def compress(
             self,
             what: Type[T],
@@ -381,19 +121,6 @@ class Database:
             compression_level=compression_level,
             txn=txn,
         )
-
-    def vacuum(self) -> None:
-        self._db.close()
-        dump_file_path = self._path.with_suffix(".tmp.db.dump")
-        compressed_file = open(dump_file_path, "w")
-        call(["mdb_dump", "-n", "-a", self._path], stdout=compressed_file)
-        self._path.unlink()
-        call(["mdb_load", "-n", "-f", dump_file_path, self._path])
-        dump_file_path.unlink()
-        config = self._config.copy()
-        # config["map_size"] = self._path.stat().st_size
-        config["map_size"] = 2**34  # 16 GiB FIXME
-        self.__init__(path=self._path, db_open_mode=self._db_open_mode, config=config)
 
     def get_indexes(self, entity: Entity) -> List[str]:
         raise NotImplementedError("LegDB.get_index_name should be overridden in subclasses")
