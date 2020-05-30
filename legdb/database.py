@@ -70,9 +70,7 @@ class Database:
             self._workers = Parallel(n_jobs=self._n_jobs)
         with self._db.write_transaction as txn:
             self.node_table = self._db.table(entity.Node.table_name, txn=txn)
-            self.node_table.APPEND_MODE = False
             self.edge_table = self._db.table(entity.Edge.table_name, txn=txn)
-            self.edge_table.APPEND_MODE = False
             self.edge_table.ensure(IndexBy.start_id_end_id.value, "!{start_id}|{end_id}", duplicates=True, txn=txn)
             self.edge_table.ensure(IndexBy.start_id.value, "{start_id}", duplicates=True, txn=txn)
             self.edge_table.ensure(IndexBy.end_id.value, "{end_id}", duplicates=True, txn=txn)
@@ -176,14 +174,32 @@ class Database:
                 for oid in result_oids:
                     yield cls.from_doc(db=self, doc=table.get(oid, txn=txn))
 
-    def _expand_edge(self, edge: Edge, page_size: int = PAGE_SIZE, txn: Optional[Transaction] = None) -> List[Edge]:
-        def expand_start_and_end(edge):
+    def _expand_edge(
+            self,
+            edge: Edge,
+            page_number: int = 0,
+            page_size: int = PAGE_SIZE,
+            txn: Optional[Transaction] = None
+    ) -> List[Edge]:
+        def expand_start_and_end(edge: Edge, page_number: int, page_size: int):
             if edge.start is not None and not edge.start.is_bound:
-                start_node_ids = list(self.seek(edge.start, page_size=page_size, oids_only=True, txn=txn))
+                start_node_ids = self.seek(
+                    edge.start,
+                    page_number=page_number,
+                    page_size=page_size,
+                    oids_only=True,
+                    txn=txn,
+                )
             else:
                 start_node_ids = [edge.start_id]
             if edge.end is not None and not edge.end.is_bound:
-                end_node_ids = list(self.seek(edge.end, page_size=page_size, oids_only=True, txn=txn))
+                end_node_ids = self.seek(
+                    edge.end,
+                    page_number=page_number,
+                    page_size=page_size,
+                    oids_only=True,
+                    txn=txn,
+                )
             else:
                 end_node_ids = [edge.end_id]
             return [
@@ -195,12 +211,20 @@ class Database:
             result = []
             has = edge.has
             edge.has = None
-            result.extend(expand_start_and_end(dataclasses.replace(edge, start=has, db=None)))
-            result.extend(expand_start_and_end(dataclasses.replace(edge, end=has, db=None)))
+            result.extend(expand_start_and_end(
+                edge=dataclasses.replace(edge, start=has, db=None),
+                page_number=page_number,
+                page_size=page_size // 2,
+            ))
+            result.extend(expand_start_and_end(
+                edge=dataclasses.replace(edge, end=has, db=None),
+                page_number=page_number,
+                page_size=page_size // 2,
+            ))
             return result
         elif (edge.start is not None and not edge.start.is_bound
               or edge.end is not None and not edge.end.is_bound):
-            return expand_start_and_end(edge)
+            return expand_start_and_end(edge=edge, page_number=page_number, page_size=page_size)
         else:
             return [edge]
 
@@ -235,6 +259,21 @@ class Database:
             for entity in entities:
                 entity.disconnect()
 
+        def seek_one(entity: Entity, index_name: Optional[str], oids_only: bool = False) -> List[Entity]:
+            oids = None
+            doc = entity.to_doc()
+            indexes_names = get_indexes(entity=entity, index_name=index_name)
+            for index_name in indexes_names:
+                oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
+                if oids is None:
+                    oids = oids
+                else:
+                    oids.intersection_update(oids)
+            if oids_only:
+                yield from oids
+            else:
+                yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids)
+
         def seek_multiple_worker(
                 database_cls: Type[Database],
                 database_path: Path,
@@ -257,23 +296,11 @@ class Database:
 
         cls = type(entity)
         table = self._db.table(entity.table_name, txn=txn)
-        entities = self._expand_edge(entity, page_size=page_size, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
+
+        entities = self._expand_edge(entity, page_number=page_number, page_size=page_size, txn=txn) if isinstance(entity, legdb.entity.Edge) else [entity]
 
         if len(entities) == 1:
-            entity, = entities
-            oids_for_entity = None
-            doc = entity.to_doc()
-            indexes_names = get_indexes(entity=entity, index_name=index_name)
-            for index_name in indexes_names:
-                oids = get_oids(table=table, index_name=index_name, doc=doc, txn=txn)
-                if oids_for_entity is None:
-                    oids_for_entity = oids
-                else:
-                    oids_for_entity.intersection_update(oids)
-            if oids_only:
-                yield from oids_for_entity
-            else:
-                yield from (cls.from_doc(db=self, doc=table.get(oid, txn=txn)) for oid in oids_for_entity)
+            yield from seek_one(entity=entities[0], index_name=index_name, oids_only=oids_only)
             return
 
         disconnect(entities)

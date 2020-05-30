@@ -51,6 +51,9 @@ class Entity(DataClassDictMixin):
         oid = d.pop("oid", None)
         for key in self._skip_on_to_doc:
             d.pop(key, None)
+        for key, value in d.items():
+            if isinstance(value, bytes):
+                d[key] = value.decode()
         result = Doc(d)
         result.oid = oid
         return result
