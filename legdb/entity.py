@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_DICT_PARAMS = {
-    "use_bytes": True,
+    "use_bytes": False,
     "use_enum": False,
     "use_datetime": False
 }
@@ -25,7 +25,7 @@ T = TypeVar("T", bound="Entity")
 
 @dataclass
 class Entity(DataClassDictMixin):
-    oid: Optional[bytes] = field(default=None, repr=False)
+    oid: Optional[str] = field(default=None, repr=False)
     database: InitVar[Optional[Database]] = None
     _database = None
     _skip_on_to_doc = []
@@ -51,9 +51,9 @@ class Entity(DataClassDictMixin):
         oid = d.pop("oid", None)
         for key in self._skip_on_to_doc:
             d.pop(key, None)
-        for key, value in d.items():
-            if isinstance(value, bytes):
-                d[key] = value.decode()
+        # for key, value in d.items():
+        #     if isinstance(value, bytes):
+        #         d[key] = value.decode()
         result = Doc(d)
         result.oid = oid
         return result
@@ -68,7 +68,7 @@ class Entity(DataClassDictMixin):
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
-        result.oid = doc.oid
+        result.oid = doc.key
         result.connect(db, txn=txn)
         return result
 
@@ -96,8 +96,8 @@ class Node(Entity):
 class Edge(Entity):
     start: Optional[Node] = None
     end: Optional[Node] = None
-    start_id: Optional[bytes] = field(default=None, repr=False)
-    end_id: Optional[bytes] = field(default=None, repr=False)
+    start_id: Optional[str] = field(default=None, repr=False)
+    end_id: Optional[str] = field(default=None, repr=False)
     has: Optional[Node] = field(default=None, repr=False)
     table_name = "edge"
     _skip_on_to_doc = ["start", "end"]

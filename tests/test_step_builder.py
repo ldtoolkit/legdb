@@ -1,7 +1,7 @@
 import string
 
-from legdb.step import SourceStep, HasStep, StepBuilder, PynndbFilterStep
-from conftest import Node
+from legdb.step import SourceStep, HasStep, StepBuilder, PynndbFilterStep, PynndbOutEStep
+from conftest import Node, Edge
 
 
 def test_step_repr():
@@ -22,6 +22,7 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={},
+            attrs_to_check=set(),
             txn=txn,
         )]
 
@@ -31,6 +32,7 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={"c": "a"},
+            attrs_to_check=set(),
             txn=txn,
             index_name="by_c",
         )]
@@ -41,6 +43,7 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={"ord_c_mod_2": 0},
+            attrs_to_check=set(),
             txn=txn,
             index_name="by_ord_c_mod_2",
         )]
@@ -51,6 +54,7 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={"c": "d", "ord_c_mod_2": 0},
+            attrs_to_check={"ord_c_mod_2"},
             txn=txn,
             index_name="by_c",
         )]
@@ -61,6 +65,7 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={"ord_c_mod_2": 0, "ord_c_mod_3": 0},
+            attrs_to_check={"ord_c_mod_2"},
             txn=txn,
             index_name="by_ord_c_mod_3",
         )]
@@ -71,5 +76,31 @@ def test_step_builder_has(database):
             database=database,
             what=Node,
             attrs={"ord_c_mod_4": 0},
+            attrs_to_check={"ord_c_mod_4"},
             txn=txn,
         )]
+
+
+def test_step_builder_out_e(database):
+    with database.read_transaction as txn:
+        step_builder = StepBuilder(database=database, edge_cls=Edge, txn=txn)
+        step_builder = step_builder.source(Node).has(ord_c_mod_2=0).has(ord_c_mod_3=0).out_e(w=1.0)
+        assert [edge.end.c for edge in step_builder] == ['g', 'm', 's', 'y']
+        assert step_builder._compiled_steps == [
+            PynndbFilterStep(
+                database=database,
+                what=Node,
+                attrs={"ord_c_mod_2": 0, "ord_c_mod_3": 0},
+                attrs_to_check={"ord_c_mod_2"},
+                txn=txn,
+                index_name="by_ord_c_mod_3",
+            ),
+            PynndbOutEStep(
+                database=database,
+                what=Edge,
+                attrs={"w": 1.0},
+                attrs_to_check={"start_id"},
+                txn=txn,
+                index_name="by_w",
+            )
+        ]

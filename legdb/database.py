@@ -82,7 +82,7 @@ class Database:
             force: bool = False,
             txn: Optional[Transaction] = None,
     ) -> pynndb.Index:
-        self._index_attrs[(what, name)] = set(attrs)
+        self._index_attrs[(what.table_name, name)] = set(attrs)
         return self._db[what.table_name].ensure(index_name=name, func=func, duplicates=duplicates, force=force, txn=txn)
 
     def sync(self, force: bool = True):
