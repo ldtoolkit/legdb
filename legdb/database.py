@@ -4,7 +4,7 @@ import functools
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable
+from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable, Collection
 
 import pynndb
 from joblib import Parallel
@@ -57,22 +57,32 @@ class Database:
         self._n_jobs = n_jobs
         if n_jobs != 0:
             self._workers = Parallel(n_jobs=self._n_jobs)
+        self._index_attrs = {}
         with self._db.write_transaction as txn:
             self.node_table = self._db.table(entity.Node.table_name, txn=txn)
             self.edge_table = self._db.table(entity.Edge.table_name, txn=txn)
-            self.edge_table.ensure(IndexBy.start_id_end_id.value, "!{start_id}|{end_id}", duplicates=True, txn=txn)
-            self.edge_table.ensure(IndexBy.start_id.value, "{start_id}", duplicates=True, txn=txn)
-            self.edge_table.ensure(IndexBy.end_id.value, "{end_id}", duplicates=True, txn=txn)
+            self.ensure_index(
+                entity.Edge,
+                IndexBy.start_id_end_id.value,
+                ["start_id", "end_id"],
+                "!{start_id}|{end_id}",
+                duplicates=True,
+                txn=txn,
+            )
+            self.ensure_index(entity.Edge, IndexBy.start_id.value, ["start_id"], "{start_id}", duplicates=True, txn=txn)
+            self.ensure_index(entity.Edge, IndexBy.end_id.value, ["end_id"], "{end_id}", duplicates=True, txn=txn)
 
     def ensure_index(
             self,
             what: Type[Entity],
             name: str,
-            func: Optional[str] = None,
+            attrs: Collection[str],
+            func: str,
             duplicates: bool = False,
             force: bool = False,
             txn: Optional[Transaction] = None,
     ) -> pynndb.Index:
+        self._index_attrs[(what, name)] = set(attrs)
         return self._db[what.table_name].ensure(index_name=name, func=func, duplicates=duplicates, force=force, txn=txn)
 
     def sync(self, force: bool = True):

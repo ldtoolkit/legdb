@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Type, Any, Optional, Dict
+from typing import Type, Any, Optional, Dict, Callable
 
 import lmdb
 import pynndb
@@ -68,6 +68,9 @@ class SourceStep(Step):
     def __repr__(self) -> str:
         return self.what.table_name
 
+def _attrs_str(attrs: Dict[str, Any]) -> str:
+    return ", ".join(f"{key}={value!r}" for key, value in attrs.items())
+
 
 class HasStep(Step):
     def __init__(self, **kwargs) -> None:
@@ -75,7 +78,7 @@ class HasStep(Step):
         self.attrs = kwargs
 
     def __repr__(self) -> str:
-        attrs_str = ", ".join(f"{key}={value!r}" for key, value in self.attrs.items())
+        attrs_str = _attrs_str(self.attrs)
         return f"has({attrs_str})"
 
 
@@ -85,31 +88,67 @@ class PynndbStep(Step):
         self.txn = txn
 
 
-class PynndbFilterStep(PynndbStep):
+class PynndbFilterStepBase(PynndbStep):
     def __init__(
             self,
             database: Database,
             what: Type[Entity],
             attrs: Dict[str, Any],
             txn: lmdb.Transaction,
+            filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
+            index_name: Optional[str] = None,
     ) -> None:
         super().__init__(database=database, txn=txn)
-        self.table: pynndb.Table = database._db.table(table_name=what.table_name, txn=txn)
         self.attrs = attrs
+        self.doc = pynndb.Doc(self.attrs)
+        self.filter_func = filter_func
+        self.index_name = index_name
+        self.table: pynndb.Table = database._db.table(table_name=what.table_name, txn=txn)
         self.what = what
 
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, PynndbFilterStep):
+        if not isinstance(other, PynndbFilterStepBase):
             return NotImplemented
         return (self.attrs == other.attrs
+                and self.index_name == other.index_name
                 and self.database == other.database
                 and self.txn == other.txn
                 and self.what == other.what)
 
+    def count(self, index_name: str) -> int:
+        filter_result = next(self.table.filter(index_name=index_name, lower=self.doc, page_size=1))
+        return filter_result.count
+
+    def select_index_and_filter_func(self):
+        def filter_func(doc: pynndb.Doc):
+            for attr in attrs_to_check:
+                if doc[attr] != self.doc[attr]:
+                    return False
+            return True
+
+        relevant_indexes = {}
+        attr_names = set(self.attrs.keys())
+        for index_name in self.table.indexes(txn=self.txn):
+            if self.database._index_attrs[(self.what, index_name)].issubset(attr_names):
+                relevant_indexes[index_name] = self.count(index_name)
+
+        if relevant_indexes:
+            self.index_name = min(relevant_indexes, key=relevant_indexes.get)
+            attrs_to_check = attr_names - self.database._index_attrs[(self.what, self.index_name)]
+        else:
+            self.index_name = None
+            attrs_to_check = attr_names
+        self.filter_func = filter_func if attrs_to_check else None
+
+
+class PynndbFilterStep(PynndbFilterStepBase):
     def __iter__(self):
-        entity = self.what(**self.attrs)
-        doc = entity.to_doc()
-        index_names = self.database.get_indexes(entity)
-        index_name = index_names[0] if index_names else None
-        yield from (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn)
-                    for result in self.table.filter(index_name=index_name, lower=doc, upper=doc, txn=self.txn))
+        self.select_index_and_filter_func()
+        filter_result = self.table.filter(
+            index_name=self.index_name,
+            lower=self.doc,
+            upper=self.doc,
+            expression=self.filter_func,
+            txn=self.txn,
+        )
+        yield from (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn) for result in filter_result)
