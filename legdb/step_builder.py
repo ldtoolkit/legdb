@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0xe866b3ed
+# __coconut_hash__ = 0x5475af46
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -650,7 +650,6 @@ _coconut_MatchError, _coconut_count, _coconut_enumerate, _coconut_makedata, _coc
 
 from typing import Optional
 from typing import Type
-from more_itertools import windowed
 
 import lmdb
 
@@ -662,9 +661,11 @@ from legdb.step import SourceStep
 from legdb.step import HasStep
 from legdb.step import InEStep
 from legdb.step import OutEStep
+from legdb.step import BothEStep
 from legdb.step import PynndbFilterStep
 from legdb.step import PynndbInEStep
 from legdb.step import PynndbOutEStep
+from legdb.step import PynndbBothEStep
 
 
 class StepBuilder:
@@ -694,6 +695,10 @@ class StepBuilder:
 
     def out_e(self, **kwargs) -> 'StepBuilder':
         self._steps.append(OutEStep(**kwargs))
+        return self
+
+    def both_e(self, **kwargs) -> 'StepBuilder':
+        self._steps.append(BothEStep(**kwargs))
         return self
 
     @_coconut_tco
@@ -783,6 +788,26 @@ class StepBuilder:
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
         _coconut_match_check = False
         _coconut_FunctionMatchError = _coconut_get_function_match_error()
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], BothEStep)):
+            _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
+            step = _coconut_match_to_args[1][0]
+            if not _coconut_match_to_kwargs:
+                self = _coconut_match_temp_0
+                _coconut_match_check = True
+        if not _coconut_match_check:
+            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
+            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is BothEStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
+            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is BothEStep, )):'
+            _coconut_match_err.value = _coconut_match_to_args
+            raise _coconut_match_err
+
+        return True, [PynndbBothEStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+
+    @_coconut_addpattern(_compile)
+    @_coconut_mark_as_match
+    def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
+        _coconut_match_check = False
+        _coconut_FunctionMatchError = _coconut_get_function_match_error()
         if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 2) and (_coconut.isinstance(_coconut_match_to_args[1][0], PynndbFilterStep)) and (_coconut.isinstance(_coconut_match_to_args[1][1], HasStep)):
             _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
             step0 = _coconut_match_to_args[1][0]
@@ -844,14 +869,17 @@ class StepBuilder:
         self._compile_all()
         last = len(self._compiled_steps) - 1
         step_iterators = [iter(step) for step in self._compiled_steps]
-        while True:
-            entity = None
-            try:
-                for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
-                    if entity is not None:
+        page_size = 4096
+        exhausted = False
+        while not exhausted:
+            entities = None
+            for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
+                if entities is not None:
+                    for entity in entities:
                         step.input(entity)
-                    entity = next(step_iterator)
-                    if i == last:
-                        yield entity
-            except StopIteration:
-                break
+                entities = (list)(_coconut_igetitem(step_iterator, _coconut.slice(None, page_size)))
+                if not entities:
+                    exhausted = True
+                    break
+                if i == last:
+                    yield from entities

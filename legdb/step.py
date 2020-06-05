@@ -55,6 +55,16 @@ class OutEStep(Step):
         return f"outE({attrs_str})"
 
 
+class BothEStep(Step):
+    def __init__(self, **kwargs) -> None:
+        super().__init__()
+        self.attrs = kwargs
+
+    def __repr__(self) -> str:
+        attrs_str = _attrs_str(self.attrs)
+        return f"bothE({attrs_str})"
+
+
 class PynndbStep(Step):
     def __init__(self, database: Database, txn: lmdb.Transaction) -> None:
         self.database = database
@@ -69,24 +79,21 @@ class PynndbFilterStepBase(PynndbStep):
             txn: lmdb.Transaction,
             attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
-            attrs_to_check: Optional[Set[str]] = None,
-            index_name: Optional[str] = None,
     ) -> None:
         super().__init__(database=database, txn=txn)
         self.attrs = attrs
-        self.attrs_to_check = attrs_to_check
         self.doc = pynndb.Doc(self.attrs) if self.attrs is not None else None
         self.filter_func = filter_func
-        self.index_name = index_name
         self.table: pynndb.Table = database._db.table(table_name=what.table_name, txn=txn)
         self.what = what
+
+        self.attrs_to_check = {}
+        self.index_names = {}
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, PynndbFilterStepBase):
             return NotImplemented
         return (self.attrs == other.attrs
-                and self.attrs_to_check == other.attrs_to_check
-                and self.index_name == other.index_name
                 and self.database == other.database
                 and self.txn == other.txn
                 and self.what == other.what)
@@ -95,9 +102,9 @@ class PynndbFilterStepBase(PynndbStep):
         filter_result = next(self.table.filter(index_name=index_name, lower=doc, page_size=1))
         return filter_result.count
 
-    def create_filter_func(self, doc: pynndb.Doc) -> Callable[[pynndb.Doc], bool]:
+    def create_filter_func(self, doc: pynndb.Doc, attr_names: Set[str]) -> Callable[[pynndb.Doc], bool]:
         def filter_func(result_doc: pynndb.Doc):
-            for attr in self.attrs_to_check:
+            for attr in self.attrs_to_check[attr_names]:
                 if result_doc[attr] != doc[attr]:
                     return False
             return True
@@ -105,21 +112,26 @@ class PynndbFilterStepBase(PynndbStep):
         return filter_func
 
     def select_index_and_filter_func(self, doc: pynndb.Doc):
-        if self.attrs_to_check is None:
+        attr_names = frozenset(doc.keys())
+        attrs_to_check = self.attrs_to_check.get(attr_names)
+        if attrs_to_check is None:
             relevant_indexes = {}
-            attr_names = set(doc.keys())
             for index_name in self.table.indexes(txn=self.txn):
                 if self.database._index_attrs[(self.what.table_name, index_name)].issubset(attr_names):
                     relevant_indexes[index_name] = self.count(index_name=index_name, doc=doc)
 
             if relevant_indexes:
-                self.index_name = min(relevant_indexes, key=relevant_indexes.get)
-                self.attrs_to_check = attr_names - self.database._index_attrs[(self.what.table_name, self.index_name)]
+                self.index_names[attr_names] = min(relevant_indexes, key=relevant_indexes.get)
+                self.attrs_to_check[attr_names] = (
+                        attr_names - self.database._index_attrs[(self.what.table_name, self.index_names[attr_names])]
+                )
             else:
-                self.index_name = None
-                self.attrs_to_check = attr_names
+                self.index_names[attr_names] = None
+                self.attrs_to_check[attr_names] = attr_names
 
-        self.filter_func = self.create_filter_func(doc) if self.attrs_to_check else None
+        index_name = self.index_names[attr_names]
+        filter_func = self.create_filter_func(doc, attr_names) if self.attrs_to_check else None
+        return index_name, filter_func
 
 
 class PynndbFilterStep(PynndbFilterStepBase):
@@ -130,8 +142,6 @@ class PynndbFilterStep(PynndbFilterStepBase):
             txn: lmdb.Transaction,
             attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
-            attrs_to_check: Optional[Set[str]] = None,
-            index_name: Optional[str] = None,
     ):
         super().__init__(
             database=database,
@@ -139,8 +149,6 @@ class PynndbFilterStep(PynndbFilterStepBase):
             attrs=attrs,
             txn=txn,
             filter_func=filter_func,
-            attrs_to_check=attrs_to_check,
-            index_name=index_name,
         )
         self.docs = [self.doc] if self.doc is not None else []
 
@@ -149,12 +157,12 @@ class PynndbFilterStep(PynndbFilterStepBase):
 
     def __iter__(self):
         for doc in self.docs:
-            self.select_index_and_filter_func(doc)
+            index_name, filter_func = self.select_index_and_filter_func(doc)
             filter_result = self.table.filter(
-                index_name=self.index_name,
+                index_name=index_name,
                 lower=doc,
                 upper=doc,
-                expression=self.filter_func,
+                expression=filter_func,
                 txn=self.txn,
             )
             yield from (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn) for result in filter_result)
@@ -168,8 +176,6 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
             attrs: Dict[str, Any],
             txn: lmdb.Transaction,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
-            attrs_to_check: Optional[Set[str]] = None,
-            index_name: Optional[str] = None,
     ):
         super().__init__(
             database=database,
@@ -177,8 +183,6 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
             attrs=None,
             txn=txn,
             filter_func=filter_func,
-            attrs_to_check=attrs_to_check,
-            index_name=index_name,
         )
         self.attrs = attrs
 
@@ -197,3 +201,9 @@ class PynndbInEStep(PynndbEdgeBaseStep):
 class PynndbOutEStep(PynndbEdgeBaseStep):
     def input_node(self, node: Node) -> None:
         self.input_attrs(start_id=node.oid)
+
+
+class PynndbBothEStep(PynndbEdgeBaseStep):
+    def input_node(self, node: Node) -> None:
+        self.input_attrs(start_id=node.oid)
+        self.input_attrs(end_id=node.oid)

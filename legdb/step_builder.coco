@@ -1,10 +1,10 @@
 from typing import Optional, Type
-from more_itertools import windowed
 
 import lmdb
 
 from legdb import Database, Entity, Node, Edge
-from legdb.step import SourceStep, HasStep, InEStep, OutEStep, PynndbFilterStep, PynndbInEStep, PynndbOutEStep
+from legdb.step import SourceStep, HasStep, InEStep, OutEStep, BothEStep
+from legdb.step import PynndbFilterStep, PynndbInEStep, PynndbOutEStep, PynndbBothEStep
 
 
 class StepBuilder:
@@ -42,6 +42,10 @@ class StepBuilder:
         self._steps.append(OutEStep(**kwargs))
         return self
 
+    def both_e(self, **kwargs) -> StepBuilder:
+        self._steps.append(BothEStep(**kwargs))
+        return self
+
     def __repr__(self) -> str:
         return ".".join(repr(step) for step in self._steps)
     
@@ -71,6 +75,16 @@ class StepBuilder:
     addpattern def _compile(self, (step is OutEStep, )):
         return True, [
             PynndbOutEStep(
+                database=self._database,
+                what=self._edge_cls,
+                attrs=step.attrs,
+                txn=self._txn,
+            )
+        ]
+
+    addpattern def _compile(self, (step is BothEStep, )):
+        return True, [
+            PynndbBothEStep(
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
@@ -115,14 +129,17 @@ class StepBuilder:
         self._compile_all()
         last = len(self._compiled_steps) - 1
         step_iterators = [iter(step) for step in self._compiled_steps]
-        while True:
-            entity = None
-            try:
-                for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
-                    if entity is not None:
+        page_size = 4096
+        exhausted = False
+        while not exhausted:
+            entities = None
+            for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
+                if entities is not None:
+                    for entity in entities:
                         step.input(entity)
-                    entity = next(step_iterator)
-                    if i == last:
-                        yield entity
-            except StopIteration:
-                break
+                entities = step_iterator$[:page_size] |> list
+                if not entities:
+                    exhausted = True
+                    break
+                if i == last:
+                    yield from entities
