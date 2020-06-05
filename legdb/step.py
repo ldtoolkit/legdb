@@ -5,95 +5,7 @@ from typing import Type, Any, Optional, Dict, Callable, Set
 import lmdb
 import pynndb
 
-from legdb import Entity, Database, Node, Edge
-
-
-class StepBuilder:
-    def __init__(
-            self,
-            database: Optional[Database] = None,
-            node_cls: Type[Entity] = Node,
-            edge_cls: Type[Entity] = Edge,
-            txn: Optional[lmdb.Transaction] = None,
-    ) -> None:
-        self._compiled_steps = []
-        self._database = database
-        self._edge_cls = edge_cls
-        self._is_compiled = False
-        self._node_cls = node_cls
-        self._steps = []
-        self._txn = txn
-
-    def source(self, what: Type[Entity]) -> StepBuilder:
-        if self._steps:
-            raise ValueError("Step 'source' should be the first.")
-
-        self._steps.append(SourceStep(what=what))
-        return self
-
-    def has(self, **kwargs) -> StepBuilder:
-        self._steps.append(HasStep(**kwargs))
-        return self
-
-    def out_e(self, **kwargs) -> StepBuilder:
-        self._steps.append(OutEStep(**kwargs))
-        return self
-
-    def __repr__(self) -> str:
-        return ".".join(repr(step) for step in self._steps)
-
-    def _compile(self) -> None:
-        if self._is_compiled:
-            return
-        self._compiled_steps = []
-        step = self._steps.pop(0)
-        if isinstance(step, SourceStep):
-            step = PynndbFilterStep(database=self._database, what=step.what, attrs={}, txn=self._txn, is_root=True)
-        else:
-            raise ValueError("Step 'source' should be the first.")
-        self._compiled_steps.append(step)
-        while self._steps:
-            next_step = self._steps.pop(0)
-            if isinstance(step, PynndbFilterStep) and isinstance(next_step, HasStep):
-                attrs = {**step.attrs, **next_step.attrs}
-                step = PynndbFilterStep(
-                    database=self._database,
-                    what=step.what,
-                    attrs=attrs,
-                    txn=self._txn,
-                    is_root=True,
-                )
-                self._compiled_steps.pop()
-                self._compiled_steps.append(step)
-            elif isinstance(step, PynndbFilterStep) and isinstance(next_step, OutEStep):
-                step = PynndbOutEStep(
-                    database=self._database,
-                    what=self._edge_cls,
-                    attrs=next_step.attrs,
-                    txn=self._txn,
-                )
-                self._compiled_steps.append(step)
-                step = next_step
-            else:
-                self._compiled_steps.append(step)
-                step = next_step
-        self._is_compiled = True
-
-    def __iter__(self):
-        self._compile()
-        last = len(self._compiled_steps) - 1
-        step_iterators = [iter(step) for step in self._compiled_steps]
-        while True:
-            entity = None
-            try:
-                for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
-                    if entity is not None:
-                        step.input(entity)
-                    entity = next(step_iterator)
-                    if i == last:
-                        yield entity
-            except StopIteration:
-                break
+from legdb import Entity, Database, Node
 
 
 class Step:
@@ -123,6 +35,16 @@ class HasStep(Step):
         return f"has({attrs_str})"
 
 
+class InEStep(Step):
+    def __init__(self, **kwargs) -> None:
+        super().__init__()
+        self.attrs = kwargs
+
+    def __repr__(self) -> str:
+        attrs_str = _attrs_str(self.attrs)
+        return f"inE({attrs_str})"
+
+
 class OutEStep(Step):
     def __init__(self, **kwargs) -> None:
         super().__init__()
@@ -134,9 +56,8 @@ class OutEStep(Step):
 
 
 class PynndbStep(Step):
-    def __init__(self, database: Database, txn: lmdb.Transaction, is_root: bool = False) -> None:
+    def __init__(self, database: Database, txn: lmdb.Transaction) -> None:
         self.database = database
-        self.is_root = is_root
         self.txn = txn
 
 
@@ -145,17 +66,16 @@ class PynndbFilterStepBase(PynndbStep):
             self,
             database: Database,
             what: Type[Entity],
-            attrs: Dict[str, Any],
             txn: lmdb.Transaction,
+            attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
             attrs_to_check: Optional[Set[str]] = None,
             index_name: Optional[str] = None,
-            is_root: bool = False,
     ) -> None:
-        super().__init__(database=database, txn=txn, is_root=is_root)
+        super().__init__(database=database, txn=txn)
         self.attrs = attrs
         self.attrs_to_check = attrs_to_check
-        self.doc = pynndb.Doc(self.attrs)
+        self.doc = pynndb.Doc(self.attrs) if self.attrs is not None else None
         self.filter_func = filter_func
         self.index_name = index_name
         self.table: pynndb.Table = database._db.table(table_name=what.table_name, txn=txn)
@@ -207,12 +127,11 @@ class PynndbFilterStep(PynndbFilterStepBase):
             self,
             database: Database,
             what: Type[Entity],
-            attrs: Dict[str, Any],
             txn: lmdb.Transaction,
+            attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
             attrs_to_check: Optional[Set[str]] = None,
             index_name: Optional[str] = None,
-            is_root: bool = False,
     ):
         super().__init__(
             database=database,
@@ -222,9 +141,8 @@ class PynndbFilterStep(PynndbFilterStepBase):
             filter_func=filter_func,
             attrs_to_check=attrs_to_check,
             index_name=index_name,
-            is_root=is_root,
         )
-        self.docs = [self.doc] if is_root else []
+        self.docs = [self.doc] if self.doc is not None else []
 
     def input_attrs(self, **kwargs) -> None:
         self.docs.append(pynndb.Doc({**kwargs, **self.attrs}))
@@ -242,7 +160,7 @@ class PynndbFilterStep(PynndbFilterStepBase):
             yield from (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn) for result in filter_result)
 
 
-class PynndbOutEStep(PynndbFilterStep):
+class PynndbEdgeBaseStep(PynndbFilterStep):
     def __init__(
             self,
             database: Database,
@@ -256,16 +174,26 @@ class PynndbOutEStep(PynndbFilterStep):
         super().__init__(
             database=database,
             what=what,
-            attrs=attrs,
+            attrs=None,
             txn=txn,
             filter_func=filter_func,
             attrs_to_check=attrs_to_check,
             index_name=index_name,
-            is_root=False,
         )
+        self.attrs = attrs
 
     def input_node(self, node: Node) -> None:
-        self.input_attrs(start_id=node.oid)
+        raise NotImplementedError()
 
     def input(self, arg: Any) -> None:
         self.input_node(node=arg)
+
+
+class PynndbInEStep(PynndbEdgeBaseStep):
+    def input_node(self, node: Node) -> None:
+        self.input_attrs(end_id=node.oid)
+
+
+class PynndbOutEStep(PynndbEdgeBaseStep):
+    def input_node(self, node: Node) -> None:
+        self.input_attrs(start_id=node.oid)
