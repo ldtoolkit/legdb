@@ -99,8 +99,8 @@ class PynndbFilterStepBase(PynndbStep):
                 and self.what == other.what)
 
     def count(self, index_name: str, doc: pynndb.Doc) -> int:
-        filter_result = next(self.table.filter(index_name=index_name, lower=doc, page_size=1))
-        return filter_result.count
+        filter_results = list(self.table.filter(index_name=index_name, lower=doc, page_size=1))
+        return filter_results[0].count if filter_results else 0
 
     def create_filter_func(self, doc: pynndb.Doc, attr_names: Set[str]) -> Callable[[pynndb.Doc], bool]:
         def filter_func(result_doc: pynndb.Doc):

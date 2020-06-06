@@ -96,13 +96,13 @@ class Database:
     def write_transaction(self) -> Transaction:
         return self._db.write_transaction
 
-    def save(self, entity: T, txn: Optional[Transaction] = None, return_oid: bool = False) -> Optional[Union[T, bytes]]:
+    def save(self, entity: T, txn: Optional[Transaction] = None, return_oid: bool = False) -> Optional[Union[T, str]]:
         table = self._db[entity.table_name]
         doc = entity.to_doc()
         if entity.oid is None:
             saved_doc = table.append(doc, txn=txn)
             if return_oid:
-                return saved_doc.oid
+                return saved_doc.key
             else:
                 return type(entity).from_doc(db=self, doc=saved_doc, txn=txn)
         else:
@@ -132,5 +132,12 @@ class Database:
             txn=txn,
         )
 
-    def get_indexes(self, entity: Entity) -> List[str]:
-        raise NotImplementedError("LegDB.get_index_name should be overridden in subclasses")
+    def get(
+            self,
+            cls: Type[T],
+            oid: Optional[bytes],
+            txn: Optional[Transaction] = None
+    ) -> Optional[T]:
+        if oid is None:
+            return None
+        return cls.from_doc(db=self, doc=self._db[cls.table_name].get(oid=oid, txn=txn))
