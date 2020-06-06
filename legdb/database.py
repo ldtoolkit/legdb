@@ -8,6 +8,7 @@ from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING
 
 import pynndb
 from joblib import Parallel
+from pynndb import write_transaction
 
 from legdb import entity
 from legdb.pynndb_types import CompressionType, Transaction
@@ -44,6 +45,21 @@ class Database:
             config: Optional[Mapping[str, Any]] = None,
             n_jobs: int = len(os.sched_getaffinity(0)),
     ):
+        @write_transaction
+        def open_tables(db, txn=None):
+            self.node_table = self._db.table(entity.Node.table_name, txn=txn)
+            self.edge_table = self._db.table(entity.Edge.table_name, txn=txn)
+            self.ensure_index(
+                entity.Edge,
+                IndexBy.start_id_end_id.value,
+                ["start_id", "end_id"],
+                "!{start_id}|{end_id}",
+                duplicates=True,
+                txn=txn,
+            )
+            self.ensure_index(entity.Edge, IndexBy.start_id.value, ["start_id"], "{start_id}", duplicates=True, txn=txn)
+            self.ensure_index(entity.Edge, IndexBy.end_id.value, ["end_id"], "{end_id}", duplicates=True, txn=txn)
+
         self._path = Path(path)
         self._db_open_mode = db_open_mode
         self._db = pynndb.Database()
@@ -58,19 +74,7 @@ class Database:
         if n_jobs != 0:
             self._workers = Parallel(n_jobs=self._n_jobs)
         self._index_attrs = {}
-        with self._db.write_transaction as txn:
-            self.node_table = self._db.table(entity.Node.table_name, txn=txn)
-            self.edge_table = self._db.table(entity.Edge.table_name, txn=txn)
-            self.ensure_index(
-                entity.Edge,
-                IndexBy.start_id_end_id.value,
-                ["start_id", "end_id"],
-                "!{start_id}|{end_id}",
-                duplicates=True,
-                txn=txn,
-            )
-            self.ensure_index(entity.Edge, IndexBy.start_id.value, ["start_id"], "{start_id}", duplicates=True, txn=txn)
-            self.ensure_index(entity.Edge, IndexBy.end_id.value, ["end_id"], "{end_id}", duplicates=True, txn=txn)
+        open_tables(self._db)
 
     def ensure_index(
             self,

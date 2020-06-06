@@ -51,8 +51,7 @@ class Entity(DataClassDictMixin):
         oid = d.pop("oid", None)
         for key in self._skip_on_to_doc:
             d.pop(key, None)
-        result = Doc(d)
-        result.oid = oid
+        result = Doc(d, oid)
         return result
 
     @classmethod
