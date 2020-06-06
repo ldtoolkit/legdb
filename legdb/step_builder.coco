@@ -3,8 +3,8 @@ from typing import Optional, Type
 import lmdb
 
 from legdb import Database, Entity, Node, Edge
-from legdb.step import SourceStep, HasStep, InEStep, OutEStep, BothEStep
-from legdb.step import PynndbFilterStep, PynndbInEStep, PynndbOutEStep, PynndbBothEStep
+from legdb.step import SourceStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
+from legdb.step import PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep
 
 
 class StepBuilder:
@@ -34,16 +34,16 @@ class StepBuilder:
         self._steps.append(HasStep(**kwargs))
         return self
 
-    def in_e(self, **kwargs) -> StepBuilder:
-        self._steps.append(InEStep(**kwargs))
+    def edge_in(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeInStep(**kwargs))
         return self
 
-    def out_e(self, **kwargs) -> StepBuilder:
-        self._steps.append(OutEStep(**kwargs))
+    def edge_out(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeOutStep(**kwargs))
         return self
 
-    def both_e(self, **kwargs) -> StepBuilder:
-        self._steps.append(BothEStep(**kwargs))
+    def edge_all(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeAllStep(**kwargs))
         return self
 
     def __repr__(self) -> str:
@@ -62,9 +62,9 @@ class StepBuilder:
             )
         ]
 
-    addpattern def _compile(self, (step is InEStep, )):
+    addpattern def _compile(self, (step is EdgeInStep, )):
         return True, [
-            PynndbInEStep(
+            PynndbEdgeInStep(
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
@@ -72,9 +72,9 @@ class StepBuilder:
             )
         ]
 
-    addpattern def _compile(self, (step is OutEStep, )):
+    addpattern def _compile(self, (step is EdgeOutStep, )):
         return True, [
-            PynndbOutEStep(
+            PynndbEdgeOutStep(
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
@@ -82,9 +82,9 @@ class StepBuilder:
             )
         ]
 
-    addpattern def _compile(self, (step is BothEStep, )):
+    addpattern def _compile(self, (step is EdgeAllStep, )):
         return True, [
-            PynndbBothEStep(
+            PynndbEdgeAllStep(
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,

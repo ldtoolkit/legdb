@@ -35,34 +35,34 @@ class HasStep(Step):
         return f"has({attrs_str})"
 
 
-class InEStep(Step):
+class EdgeInStep(Step):
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self.attrs = kwargs
 
     def __repr__(self) -> str:
         attrs_str = _attrs_str(self.attrs)
-        return f"inE({attrs_str})"
+        return f"edge_in({attrs_str})"
 
 
-class OutEStep(Step):
+class EdgeOutStep(Step):
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self.attrs = kwargs
 
     def __repr__(self) -> str:
         attrs_str = _attrs_str(self.attrs)
-        return f"outE({attrs_str})"
+        return f"edge_out({attrs_str})"
 
 
-class BothEStep(Step):
+class EdgeAllStep(Step):
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self.attrs = kwargs
 
     def __repr__(self) -> str:
         attrs_str = _attrs_str(self.attrs)
-        return f"bothE({attrs_str})"
+        return f"edge_all({attrs_str})"
 
 
 class PynndbStep(Step):
@@ -193,17 +193,17 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
         self.input_node(node=arg)
 
 
-class PynndbInEStep(PynndbEdgeBaseStep):
+class PynndbEdgeInStep(PynndbEdgeBaseStep):
     def input_node(self, node: Node) -> None:
         self.input_attrs(end_id=node.oid)
 
 
-class PynndbOutEStep(PynndbEdgeBaseStep):
+class PynndbEdgeOutStep(PynndbEdgeBaseStep):
     def input_node(self, node: Node) -> None:
         self.input_attrs(start_id=node.oid)
 
 
-class PynndbBothEStep(PynndbEdgeBaseStep):
+class PynndbEdgeAllStep(PynndbEdgeBaseStep):
     def input_node(self, node: Node) -> None:
         self.input_attrs(start_id=node.oid)
         self.input_attrs(end_id=node.oid)

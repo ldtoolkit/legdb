@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x5475af46
+# __coconut_hash__ = 0xa774b2d1
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -659,13 +659,13 @@ from legdb import Node
 from legdb import Edge
 from legdb.step import SourceStep
 from legdb.step import HasStep
-from legdb.step import InEStep
-from legdb.step import OutEStep
-from legdb.step import BothEStep
+from legdb.step import EdgeInStep
+from legdb.step import EdgeOutStep
+from legdb.step import EdgeAllStep
 from legdb.step import PynndbFilterStep
-from legdb.step import PynndbInEStep
-from legdb.step import PynndbOutEStep
-from legdb.step import PynndbBothEStep
+from legdb.step import PynndbEdgeInStep
+from legdb.step import PynndbEdgeOutStep
+from legdb.step import PynndbEdgeAllStep
 
 
 class StepBuilder:
@@ -689,16 +689,16 @@ class StepBuilder:
         self._steps.append(HasStep(**kwargs))
         return self
 
-    def in_e(self, **kwargs) -> 'StepBuilder':
-        self._steps.append(InEStep(**kwargs))
+    def edge_in(self, **kwargs) -> 'StepBuilder':
+        self._steps.append(EdgeInStep(**kwargs))
         return self
 
-    def out_e(self, **kwargs) -> 'StepBuilder':
-        self._steps.append(OutEStep(**kwargs))
+    def edge_out(self, **kwargs) -> 'StepBuilder':
+        self._steps.append(EdgeOutStep(**kwargs))
         return self
 
-    def both_e(self, **kwargs) -> 'StepBuilder':
-        self._steps.append(BothEStep(**kwargs))
+    def edge_all(self, **kwargs) -> 'StepBuilder':
+        self._steps.append(EdgeAllStep(**kwargs))
         return self
 
     @_coconut_tco
@@ -748,7 +748,7 @@ class StepBuilder:
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
         _coconut_match_check = False
         _coconut_FunctionMatchError = _coconut_get_function_match_error()
-        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], InEStep)):
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], EdgeInStep)):
             _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
             step = _coconut_match_to_args[1][0]
             if not _coconut_match_to_kwargs:
@@ -756,19 +756,19 @@ class StepBuilder:
                 _coconut_match_check = True
         if not _coconut_match_check:
             _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is InEStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is InEStep, )):'
+            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeInStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
+            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeInStep, )):'
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbInEStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
         _coconut_match_check = False
         _coconut_FunctionMatchError = _coconut_get_function_match_error()
-        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], OutEStep)):
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], EdgeOutStep)):
             _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
             step = _coconut_match_to_args[1][0]
             if not _coconut_match_to_kwargs:
@@ -776,19 +776,19 @@ class StepBuilder:
                 _coconut_match_check = True
         if not _coconut_match_check:
             _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is OutEStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is OutEStep, )):'
+            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeOutStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
+            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeOutStep, )):'
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbOutEStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
         _coconut_match_check = False
         _coconut_FunctionMatchError = _coconut_get_function_match_error()
-        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], BothEStep)):
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 1) and (_coconut.isinstance(_coconut_match_to_args[1][0], EdgeAllStep)):
             _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
             step = _coconut_match_to_args[1][0]
             if not _coconut_match_to_kwargs:
@@ -796,12 +796,12 @@ class StepBuilder:
                 _coconut_match_check = True
         if not _coconut_match_check:
             _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is BothEStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is BothEStep, )):'
+            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeAllStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
+            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeAllStep, )):'
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbBothEStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match

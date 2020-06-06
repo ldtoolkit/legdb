@@ -1,6 +1,6 @@
 import string
 
-from legdb.step import SourceStep, HasStep, PynndbFilterStep, PynndbOutEStep, PynndbInEStep, PynndbBothEStep
+from legdb.step import SourceStep, HasStep, PynndbFilterStep, PynndbEdgeOutStep, PynndbEdgeInStep, PynndbEdgeAllStep
 from legdb.step_builder import StepBuilder
 from conftest import Node, Edge
 
@@ -85,7 +85,7 @@ def test_step_builder_has(database):
 def test_step_builder_edge_steps(database):
     with database.read_transaction as txn:
         step_builder = StepBuilder(database=database, edge_cls=Edge, txn=txn)
-        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).in_e(w=-1.0)
+        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).edge_in(w=-1.0)
         assert [edge.start.c for edge in step_builder] == ['g', 'm', 's', 'y']
         assert step_builder._compiled_steps == [
             PynndbFilterStep(
@@ -94,7 +94,7 @@ def test_step_builder_edge_steps(database):
                 attrs={"ord_c_mod_2": 0, "ord_c_mod_3": 0},
                 txn=txn,
             ),
-            PynndbInEStep(
+            PynndbEdgeInStep(
                 database=database,
                 what=Edge,
                 attrs={"w": -1.0},
@@ -107,7 +107,7 @@ def test_step_builder_edge_steps(database):
         assert step_builder._compiled_steps[1].index_names[frozenset({"w", "end_id"})] == "by_w"
 
         step_builder = StepBuilder(database=database, edge_cls=Edge, txn=txn)
-        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).out_e(w=1.0)
+        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).edge_out(w=1.0)
         assert [edge.end.c for edge in step_builder] == ['g', 'm', 's', 'y']
         assert step_builder._compiled_steps == [
             PynndbFilterStep(
@@ -116,7 +116,7 @@ def test_step_builder_edge_steps(database):
                 attrs={"ord_c_mod_2": 0, "ord_c_mod_3": 0},
                 txn=txn,
             ),
-            PynndbOutEStep(
+            PynndbEdgeOutStep(
                 database=database,
                 what=Edge,
                 attrs={"w": 1.0},
@@ -129,7 +129,7 @@ def test_step_builder_edge_steps(database):
         assert step_builder._compiled_steps[1].index_names[frozenset({"w", "start_id"})] == "by_w"
 
         step_builder = StepBuilder(database=database, edge_cls=Edge, txn=txn)
-        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).both_e(w=1.0)
+        step_builder = step_builder.source(Node).has(ord_c_mod_2=0, ord_c_mod_3=0).edge_all(w=1.0)
         edges = list(step_builder)
         assert len(edges) == 8
         for edge in edges:
@@ -143,7 +143,7 @@ def test_step_builder_edge_steps(database):
                 attrs={"ord_c_mod_2": 0, "ord_c_mod_3": 0},
                 txn=txn,
             ),
-            PynndbBothEStep(
+            PynndbEdgeAllStep(
                 database=database,
                 what=Edge,
                 attrs={"w": 1.0},
