@@ -64,3 +64,8 @@ def database(tmp_path):
         w = ord(end_node.c) - ord(start_node.c)
         _ = database.save(Edge(start=start_node, end=end_node, w=w))
     return database
+
+
+@fixture(params=[1, 2, 10, 4096, 10000])
+def page_size(request):
+    return request.param

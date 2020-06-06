@@ -156,7 +156,8 @@ class PynndbFilterStep(PynndbFilterStepBase):
         self.docs.append(pynndb.Doc({**kwargs, **self.attrs}))
 
     def __iter__(self):
-        for doc in self.docs:
+        while self.docs:
+            doc = self.docs.pop(0)
             index_name, filter_func = self.select_index_and_filter_func(doc)
             filter_result = self.table.filter(
                 index_name=index_name,

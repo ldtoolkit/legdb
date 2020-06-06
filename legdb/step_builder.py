@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0xa774b2d1
+# __coconut_hash__ = 0x5b6af42e
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -669,12 +669,13 @@ from legdb.step import PynndbEdgeAllStep
 
 
 class StepBuilder:
-    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
+    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
         self._compiled_steps = []
         self._database = database
         self._edge_cls = edge_cls
         self._is_compiled = False
         self._node_cls = node_cls
+        self._page_size = page_size
         self._steps = []
         self._txn = txn
 
@@ -869,17 +870,23 @@ class StepBuilder:
         self._compile_all()
         last = len(self._compiled_steps) - 1
         step_iterators = [iter(step) for step in self._compiled_steps]
-        page_size = 4096
         exhausted = False
+        entities = None
+        i = 0
         while not exhausted:
-            entities = None
-            for i, (step, step_iterator) in enumerate(zip(self._compiled_steps, step_iterators)):
-                if entities is not None:
-                    for entity in entities:
-                        step.input(entity)
-                entities = (list)(_coconut_igetitem(step_iterator, _coconut.slice(None, page_size)))
-                if not entities:
+            step = self._compiled_steps[i]
+            step_iterator = step_iterators[i]
+            if i > 0 and entities:
+                for entity in entities:
+                    step.input(entity)
+            entities = (list)(_coconut_igetitem(step_iterator, _coconut.slice(None, self._page_size)))
+            if not entities:
+                i -= 1
+                if i < 0:
                     exhausted = True
-                    break
-                if i == last:
+            else:
+                if i < last:
+                    i += 1
+                    step_iterators[i] = iter(self._compiled_steps[i])
+                else:
                     yield from entities
