@@ -53,6 +53,13 @@ class StepBuilder:
 
     def __repr__(self) -> str:
         return ".".join(repr(step) for step in self._steps)
+
+    def create_parallel_step(self, internal_step_creator):
+        return ParallelStep(
+            steps=(internal_step_creator() for _ in range(self._n_jobs)),
+            n_jobs=self._n_jobs,
+            page_size=self._page_size,
+        )
     
     match def _compile(self):
         raise NotImplementedError()
@@ -69,44 +76,31 @@ class StepBuilder:
         ]
 
     addpattern def _compile(self, (step is EdgeInStep, )):
-        return True, [
-            PynndbEdgeInStep(
-                database=self._database,
-                what=self._edge_cls,
-                attrs=step.attrs,
-                page_size=self._page_size,
-                txn=self._txn,
-            )
-        ]
+        return True, [self.create_parallel_step(-> PynndbEdgeInStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        ))]
 
     addpattern def _compile(self, (step is EdgeOutStep, )):
-        return True, [
-            PynndbEdgeOutStep(
-                database=self._database,
-                what=self._edge_cls,
-                attrs=step.attrs,
-                page_size=self._page_size,
-                txn=self._txn,
-            )
-        ]
+        return True, [self.create_parallel_step(-> PynndbEdgeOutStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        ))]
 
     addpattern def _compile(self, (step is EdgeAllStep, )):
-        def create_edge_all_step():
-            return PynndbEdgeAllStep(
-                database=self._database,
-                what=self._edge_cls,
-                attrs=step.attrs,
-                page_size=self._page_size,
-                txn=self._txn,
-            )
-
-        return True, [
-            ParallelStep(
-                steps=(create_edge_all_step() for _ in range(self._n_jobs)),
-                n_jobs=self._n_jobs,
-                page_size=self._page_size,
-            )
-        ]
+        return True, [self.create_parallel_step(-> PynndbEdgeAllStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        ))]
 
     addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):
         attrs = {**step0.attrs, **step1.attrs}
