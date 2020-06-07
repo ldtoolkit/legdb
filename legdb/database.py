@@ -71,15 +71,12 @@ class Database:
         self._db.configure(self._config)
         self._db.open(str(self._path))
         self._n_jobs = n_jobs
-        if n_jobs != 0:
-            self._workers = Parallel(n_jobs=self._n_jobs)
         self._index_attrs = {}
         open_tables(self._db)
 
     def __getstate__(self):
         state = self.__dict__.copy()
         del state["_db"]
-        del state["_workers"]
         del state["node_table"]
         del state["edge_table"]
         return state
