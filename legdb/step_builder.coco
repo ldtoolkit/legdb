@@ -1,10 +1,11 @@
 from typing import Optional, Type
+import os
 
 import lmdb
 
 from legdb import Database, Entity, Node, Edge
 from legdb.step import SourceStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
-from legdb.step import PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep
+from legdb.step import ParallelStep, PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep
 
 
 class StepBuilder:
@@ -14,12 +15,14 @@ class StepBuilder:
             node_cls: Type[Entity] = Node,
             edge_cls: Type[Entity] = Edge,
             page_size: int = 4096,
+            n_jobs: int = len(os.sched_getaffinity(0)),
             txn: Optional[lmdb.Transaction] = None,
     ) -> None:
         self._compiled_steps = []
         self._database = database
         self._edge_cls = edge_cls
         self._is_compiled = False
+        self._n_jobs = n_jobs
         self._node_cls = node_cls
         self._page_size = page_size
         self._steps = []
@@ -88,13 +91,20 @@ class StepBuilder:
         ]
 
     addpattern def _compile(self, (step is EdgeAllStep, )):
-        return True, [
-            PynndbEdgeAllStep(
+        def create_edge_all_step():
+            return PynndbEdgeAllStep(
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
                 page_size=self._page_size,
                 txn=self._txn,
+            )
+
+        return True, [
+            ParallelStep(
+                steps=(create_edge_all_step() for _ in range(self._n_jobs)),
+                n_jobs=self._n_jobs,
+                page_size=self._page_size,
             )
         ]
 

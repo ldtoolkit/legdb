@@ -76,6 +76,18 @@ class Database:
         self._index_attrs = {}
         open_tables(self._db)
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state["_db"]
+        del state["_workers"]
+        del state["node_table"]
+        del state["edge_table"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.__init__(path=self._path, db_open_mode=self._db_open_mode, config=self._config, n_jobs=self._n_jobs)
+
     def ensure_index(
             self,
             what: Type[Entity],

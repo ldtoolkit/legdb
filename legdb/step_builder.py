@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0xda02d996
+# __coconut_hash__ = 0x7fb5c12e
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -650,6 +650,7 @@ _coconut_MatchError, _coconut_count, _coconut_enumerate, _coconut_makedata, _coc
 
 from typing import Optional
 from typing import Type
+import os
 
 import lmdb
 
@@ -662,6 +663,7 @@ from legdb.step import HasStep
 from legdb.step import EdgeInStep
 from legdb.step import EdgeOutStep
 from legdb.step import EdgeAllStep
+from legdb.step import ParallelStep
 from legdb.step import PynndbFilterStep
 from legdb.step import PynndbEdgeInStep
 from legdb.step import PynndbEdgeOutStep
@@ -669,11 +671,12 @@ from legdb.step import PynndbEdgeAllStep
 
 
 class StepBuilder:
-    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
+    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, n_jobs: 'int'=len(os.sched_getaffinity(0)), txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
         self._compiled_steps = []
         self._database = database
         self._edge_cls = edge_cls
         self._is_compiled = False
+        self._n_jobs = n_jobs
         self._node_cls = node_cls
         self._page_size = page_size
         self._steps = []
@@ -802,7 +805,11 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
+        @_coconut_tco
+        def create_edge_all_step():
+            return _coconut_tail_call(PynndbEdgeAllStep, database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)
+
+        return True, [ParallelStep(steps=(create_edge_all_step() for _ in range(self._n_jobs)), n_jobs=self._n_jobs, page_size=self._page_size)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
