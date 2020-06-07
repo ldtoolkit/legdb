@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from itertools import islice
-from typing import Type, Any, Optional, Dict, Callable, Set, List
+from typing import Type, Any, Optional, Dict, Callable, Set, List, Collection
 
 import lmdb
 import pynndb
@@ -208,8 +208,9 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
     def input_node(self, node: Node) -> None:
         raise NotImplementedError()
 
-    def input(self, arg: Any) -> None:
-        self.input_node(node=arg)
+    def input(self, args: Collection[Any]) -> None:
+        for arg in args:
+            self.input_node(node=arg)
 
 
 class PynndbEdgeInStep(PynndbEdgeBaseStep):

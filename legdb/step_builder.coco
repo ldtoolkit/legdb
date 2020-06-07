@@ -141,8 +141,7 @@ class StepBuilder:
         while not exhausted:
             step = self._compiled_steps[i]
             if i > 0 and entities:
-                for entity in entities:
-                    step.input(entity)
+                step.input(entities)
             entities = step.output()
             if not entities:
                 i -= 1

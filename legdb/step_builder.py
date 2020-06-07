@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x8ab9e33a
+# __coconut_hash__ = 0xda02d996
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -875,8 +875,7 @@ class StepBuilder:
         while not exhausted:
             step = self._compiled_steps[i]
             if i > 0 and entities:
-                for entity in entities:
-                    step.input(entity)
+                step.input(entities)
             entities = step.output()
             if not entities:
                 i -= 1
