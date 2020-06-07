@@ -60,6 +60,7 @@ class StepBuilder:
                 database=self._database, 
                 what=step.what, 
                 attrs={}, 
+                page_size=self._page_size,
                 txn=self._txn, 
             )
         ]
@@ -70,6 +71,7 @@ class StepBuilder:
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
+                page_size=self._page_size,
                 txn=self._txn,
             )
         ]
@@ -80,6 +82,7 @@ class StepBuilder:
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
+                page_size=self._page_size,
                 txn=self._txn,
             )
         ]
@@ -90,6 +93,7 @@ class StepBuilder:
                 database=self._database,
                 what=self._edge_cls,
                 attrs=step.attrs,
+                page_size=self._page_size,
                 txn=self._txn,
             )
         ]
@@ -101,6 +105,7 @@ class StepBuilder:
                 database=self._database,
                 what=step0.what,
                 attrs=attrs,
+                page_size=self._page_size,
                 txn=self._txn,
             )
         ]
@@ -130,17 +135,15 @@ class StepBuilder:
     def __iter__(self):
         self._compile_all()
         last = len(self._compiled_steps) - 1
-        step_iterators = [iter(step) for step in self._compiled_steps]
         exhausted = False
         entities = None
         i = 0
         while not exhausted:
             step = self._compiled_steps[i]
-            step_iterator = step_iterators[i]
             if i > 0 and entities:
                 for entity in entities:
                     step.input(entity)
-            entities = step_iterator$[:self._page_size] |> list
+            entities = step.output()
             if not entities:
                 i -= 1
                 if i < 0:
@@ -148,6 +151,6 @@ class StepBuilder:
             else:
                 if i < last:
                     i += 1
-                    step_iterators[i] = iter(self._compiled_steps[i])
+                    self._compiled_steps[i].reset_iter()
                 else:
                     yield from entities

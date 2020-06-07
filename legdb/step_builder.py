@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x5b6af42e
+# __coconut_hash__ = 0x8ab9e33a
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -742,7 +742,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbFilterStep(database=self._database, what=step.what, attrs={}, txn=self._txn)]
+        return True, [PynndbFilterStep(database=self._database, what=step.what, attrs={}, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -762,7 +762,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -782,7 +782,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -802,7 +802,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, txn=self._txn)]
+        return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -824,7 +824,7 @@ class StepBuilder:
             raise _coconut_match_err
 
         attrs = {**step0.attrs, **step1.attrs}
-        return False, [PynndbFilterStep(database=self._database, what=step0.what, attrs=attrs, txn=self._txn)]
+        return False, [PynndbFilterStep(database=self._database, what=step0.what, attrs=attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -869,17 +869,15 @@ class StepBuilder:
     def __iter__(self):
         self._compile_all()
         last = len(self._compiled_steps) - 1
-        step_iterators = [iter(step) for step in self._compiled_steps]
         exhausted = False
         entities = None
         i = 0
         while not exhausted:
             step = self._compiled_steps[i]
-            step_iterator = step_iterators[i]
             if i > 0 and entities:
                 for entity in entities:
                     step.input(entity)
-            entities = (list)(_coconut_igetitem(step_iterator, _coconut.slice(None, self._page_size)))
+            entities = step.output()
             if not entities:
                 i -= 1
                 if i < 0:
@@ -887,6 +885,6 @@ class StepBuilder:
             else:
                 if i < last:
                     i += 1
-                    step_iterators[i] = iter(self._compiled_steps[i])
+                    self._compiled_steps[i].reset_iter()
                 else:
                     yield from entities

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Type, Any, Optional, Dict, Callable, Set
+from itertools import islice
+from typing import Type, Any, Optional, Dict, Callable, Set, List
 
 import lmdb
 import pynndb
 
-from legdb import Entity, Database, Node
+from legdb import Entity, Database, Node, Edge
 
 
 class Step:
@@ -66,8 +67,9 @@ class EdgeAllStep(Step):
 
 
 class PynndbStep(Step):
-    def __init__(self, database: Database, txn: lmdb.Transaction) -> None:
+    def __init__(self, database: Database, page_size: int, txn: lmdb.Transaction) -> None:
         self.database = database
+        self.page_size = page_size
         self.txn = txn
 
 
@@ -76,11 +78,12 @@ class PynndbFilterStepBase(PynndbStep):
             self,
             database: Database,
             what: Type[Entity],
+            page_size: int,
             txn: lmdb.Transaction,
             attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
     ) -> None:
-        super().__init__(database=database, txn=txn)
+        super().__init__(database=database, page_size=page_size, txn=txn)
         self.attrs = attrs
         self.doc = pynndb.Doc(self.attrs) if self.attrs is not None else None
         self.filter_func = filter_func
@@ -139,6 +142,7 @@ class PynndbFilterStep(PynndbFilterStepBase):
             self,
             database: Database,
             what: Type[Entity],
+            page_size: int,
             txn: lmdb.Transaction,
             attrs: Optional[Dict[str, Any]] = None,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
@@ -147,13 +151,18 @@ class PynndbFilterStep(PynndbFilterStepBase):
             database=database,
             what=what,
             attrs=attrs,
+            page_size=page_size,
             txn=txn,
             filter_func=filter_func,
         )
         self.docs = [self.doc] if self.doc is not None else []
+        self.iter = iter(self)
 
     def input_attrs(self, **kwargs) -> None:
         self.docs.append(pynndb.Doc({**kwargs, **self.attrs}))
+
+    def process(self, entity: Entity) -> bool:
+        return True
 
     def __iter__(self):
         while self.docs:
@@ -166,7 +175,14 @@ class PynndbFilterStep(PynndbFilterStepBase):
                 expression=filter_func,
                 txn=self.txn,
             )
-            yield from (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn) for result in filter_result)
+            result = (self.what.from_doc(doc=result.doc, db=self.database, txn=self.txn) for result in filter_result)
+            yield from (edge for edge in result if self.process(edge))
+
+    def reset_iter(self):
+        self.iter = iter(self)
+
+    def output(self) -> List[Entity]:
+        return list(islice(self.iter, self.page_size))
 
 
 class PynndbEdgeBaseStep(PynndbFilterStep):
@@ -175,6 +191,7 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
             database: Database,
             what: Type[Entity],
             attrs: Dict[str, Any],
+            page_size: int,
             txn: lmdb.Transaction,
             filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
     ):
@@ -182,6 +199,7 @@ class PynndbEdgeBaseStep(PynndbFilterStep):
             database=database,
             what=what,
             attrs=None,
+            page_size=page_size,
             txn=txn,
             filter_func=filter_func,
         )
@@ -205,6 +223,32 @@ class PynndbEdgeOutStep(PynndbEdgeBaseStep):
 
 
 class PynndbEdgeAllStep(PynndbEdgeBaseStep):
+    def __init__(
+            self,
+            database: Database,
+            what: Type[Entity],
+            attrs: Dict[str, Any],
+            page_size: int,
+            txn: lmdb.Transaction,
+            filter_func: Optional[Callable[[pynndb.Doc], bool]] = None,
+    ):
+        super().__init__(
+            database=database,
+            what=what,
+            attrs=attrs,
+            page_size=page_size,
+            txn=txn,
+            filter_func=filter_func,
+        )
+        self.output_oids = set()
+
     def input_node(self, node: Node) -> None:
         self.input_attrs(start_id=node.oid)
         self.input_attrs(end_id=node.oid)
+
+    def process(self, entity: Entity) -> bool:
+        if entity.oid in self.output_oids:
+            return False
+        else:
+            self.output_oids.add(entity.oid)
+            return True
