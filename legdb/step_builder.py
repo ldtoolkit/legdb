@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x885e04c8
+# __coconut_hash__ = 0x2f2cf591
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -663,7 +663,6 @@ from legdb.step import HasStep
 from legdb.step import EdgeInStep
 from legdb.step import EdgeOutStep
 from legdb.step import EdgeAllStep
-from legdb.step import ParallelStep
 from legdb.step import PynndbFilterStep
 from legdb.step import PynndbEdgeInStep
 from legdb.step import PynndbEdgeOutStep
@@ -671,12 +670,11 @@ from legdb.step import PynndbEdgeAllStep
 
 
 class StepBuilder:
-    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, n_jobs: 'int'=len(os.sched_getaffinity(0)), txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
+    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
         self._compiled_steps = []
         self._database = database
         self._edge_cls = edge_cls
         self._is_compiled = False
-        self._n_jobs = n_jobs
         self._node_cls = node_cls
         self._page_size = page_size
         self._steps = []
@@ -708,10 +706,6 @@ class StepBuilder:
     @_coconut_tco
     def __repr__(self) -> 'str':
         return _coconut_tail_call(".".join, (repr(step) for step in self._steps))
-
-    @_coconut_tco
-    def create_parallel_step(self, internal_step_creator):
-        return _coconut_tail_call(ParallelStep, steps=(internal_step_creator() for _ in range(self._n_jobs)), n_jobs=self._n_jobs, page_size=self._page_size)
 
     @_coconut_mark_as_match
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
@@ -769,7 +763,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [self.create_parallel_step(lambda _=None: PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn))]
+        return True, [PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -789,7 +783,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [self.create_parallel_step(lambda _=None: PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn))]
+        return True, [PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -809,7 +803,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return True, [self.create_parallel_step(lambda _=None: PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn))]
+        return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match

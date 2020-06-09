@@ -6,8 +6,6 @@ from typing import Type, Any, Optional, Dict, Callable, Set, List, Collection
 
 import lmdb
 import pynndb
-from joblib import Parallel, delayed
-from more_itertools.more import divide
 
 from legdb import Entity, Database, Node
 
@@ -99,31 +97,6 @@ class PynndbStep(Step):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self.txn = self.database.read_transaction
-
-
-class ParallelStep(Step):
-    def __init__(self, steps: Collection[PynndbStep], n_jobs: int, page_size: int) -> None:
-        super().__init__()
-        self.n_jobs = n_jobs
-        self.steps = list(steps)
-        self.iter = iter(self)
-        self.page_size = page_size
-
-    def input(self, args: Collection[Any]) -> None:
-        divided_args = divide(len(self.steps), args)
-        for step, args in zip(self.steps, divided_args):
-            args = list(args)
-            step.input(args)
-
-    def reset_iter(self):
-        self.iter = iter(self)
-
-    def __iter__(self):
-        result = chain(*Parallel(n_jobs=self.n_jobs)(delayed(step.output)() for step in self.steps))
-        yield from (entity for entity in result if self.process(entity))
-
-    def output(self) -> List[Entity]:
-        return list(islice(self.iter, self.page_size))
 
 
 class PynndbFilterStepBase(PynndbStep, ABC):

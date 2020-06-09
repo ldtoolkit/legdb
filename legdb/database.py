@@ -43,7 +43,6 @@ class Database:
             path: Union[Path, str],
             db_open_mode: DbOpenMode = DbOpenMode.READ_WRITE,
             config: Optional[Mapping[str, Any]] = None,
-            n_jobs: int = len(os.sched_getaffinity(0)),
     ):
         @write_transaction
         def open_tables(db, txn=None):
@@ -70,7 +69,6 @@ class Database:
         self._config = config
         self._db.configure(self._config)
         self._db.open(str(self._path))
-        self._n_jobs = n_jobs
         self._index_attrs = {}
         open_tables(self._db)
 
@@ -83,7 +81,7 @@ class Database:
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.__init__(path=self._path, db_open_mode=self._db_open_mode, config=self._config, n_jobs=self._n_jobs)
+        self.__init__(path=self._path, db_open_mode=self._db_open_mode, config=self._config)
 
     def ensure_index(
             self,
