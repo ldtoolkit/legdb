@@ -14,7 +14,7 @@ class StepBuilder:
             database: Optional[Database] = None,
             node_cls: Type[Entity] = Node,
             edge_cls: Type[Entity] = Edge,
-            page_size: int = 4096,
+            page_size: int = 65536,
             txn: Optional[lmdb.Transaction] = None,
     ) -> None:
         self._compiled_steps = []

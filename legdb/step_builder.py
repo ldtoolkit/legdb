@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x2f2cf591
+# __coconut_hash__ = 0xb0176bf3
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -670,7 +670,7 @@ from legdb.step import PynndbEdgeAllStep
 
 
 class StepBuilder:
-    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=4096, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
+    def __init__(self, database: 'Optional[Database]'=None, node_cls: 'Type[Entity]'=Node, edge_cls: 'Type[Entity]'=Edge, page_size: 'int'=65536, txn: 'Optional[lmdb.Transaction]'=None,) -> 'None':
         self._compiled_steps = []
         self._database = database
         self._edge_cls = edge_cls
