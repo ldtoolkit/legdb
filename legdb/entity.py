@@ -96,7 +96,6 @@ class Edge(Entity):
     end_id: Optional[str] = field(default=None, repr=False)
     has: Optional[Node] = field(default=None, repr=False)
     table_name = "edge"
-    _skip_on_to_doc = ["start", "end"]
     _node_class = None
 
     def __post_init__(self, database: Optional[Database] = None):
@@ -112,3 +111,21 @@ class Edge(Entity):
             self.start = self._node_class.from_doc(self._database.node_table.get(oid=self.start_id, txn=txn), txn=txn)
         if (self.end is None or self.end == Node()) and self.end_id is not None:
             self.end = self._node_class.from_doc(self._database.node_table.get(oid=self.end_id, txn=txn), txn=txn)
+
+    @classmethod
+    def from_doc(
+            cls: Type[T],
+            doc: Optional[Doc],
+            db: Optional[Database] = None,
+            txn: Optional[Transaction] = None
+    ) -> Optional[T]:
+        if doc is None:
+            return None
+        d = dict(doc)
+        start = cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS)
+        end = cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS)
+        result = super().from_doc(doc=doc, db=db, txn=txn)
+        result.start = start
+        result.end = end
+        return result
+

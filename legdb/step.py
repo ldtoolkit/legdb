@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC
 from itertools import islice, chain
-from typing import Type, Any, Optional, Dict, Callable, Set, List, Collection
+from typing import Type, Any, Optional, Dict, Callable, Set, List, Collection, FrozenSet
 
 import lmdb
 import pynndb
@@ -142,14 +142,30 @@ class PynndbFilterStepBase(PynndbStep, ABC):
     def create_filter_func(self, doc: pynndb.Doc, attr_names: Set[str]) -> Callable[[pynndb.Doc], bool]:
         def filter_func(result_doc: pynndb.Doc):
             for attr in self.attrs_to_check[attr_names]:
-                if result_doc[attr] != doc[attr]:
-                    return False
+                if "[" in attr and "]" in attr:
+                    attr0, attr1 = attr.replace("[", " ").replace("]", " ").split()
+                    if result_doc[attr0][attr1] != doc[attr0][attr1]:
+                        return False
+                else:
+                    if result_doc[attr] != doc[attr]:
+                        return False
             return True
 
         return filter_func
 
+    @staticmethod
+    def get_attr_names(doc: pynndb.Doc) -> FrozenSet[str]:
+        result = []
+        for key0, value in doc.items():
+            if isinstance(value, dict):
+                for key1 in value:
+                    result.append(f"{key0}[{key1}]")
+            else:
+                result.append(f"{key0}")
+        return frozenset(result)
+
     def select_index_and_filter_func(self, doc: pynndb.Doc):
-        attr_names = frozenset(doc.keys())
+        attr_names = self.get_attr_names(doc)
         attrs_to_check = self.attrs_to_check.get(attr_names)
         if attrs_to_check is None:
             relevant_indexes = {}
@@ -189,7 +205,7 @@ class PynndbFilterStep(PynndbFilterStepBase):
             txn=txn,
             filter_func=filter_func,
         )
-        self.doc_attrs = [self.attrs] if self.attrs else []
+        self.doc_attrs = [self.attrs] if self.attrs else [None]
         self.iter = iter(self)
 
     def __getstate__(self):
@@ -206,8 +222,14 @@ class PynndbFilterStep(PynndbFilterStepBase):
 
     def __iter__(self):
         while self.doc_attrs:
-            doc = pynndb.Doc(self.doc_attrs.pop(0))
-            index_name, filter_func = self.select_index_and_filter_func(doc)
+            doc_attrs = self.doc_attrs.pop(0)
+            if doc_attrs is not None:
+                doc = pynndb.Doc(doc_attrs)
+                index_name, filter_func = self.select_index_and_filter_func(doc)
+            else:
+                doc = None
+                index_name = None
+                filter_func = None
             filter_result = self.table.filter(
                 index_name=index_name,
                 lower=doc,
