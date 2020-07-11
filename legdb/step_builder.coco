@@ -1,3 +1,4 @@
+from enum import Enum
 from typing import Optional, Type
 import os
 
@@ -5,7 +6,12 @@ import lmdb
 
 from legdb import Database, Entity, Node, Edge
 from legdb.step import SourceStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
-from legdb.step import PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep
+from legdb.step import PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep, PynndbUnionStep
+
+
+class EdgeType(Enum):
+    IN = "in"
+    OUT = "out"
 
 
 class StepBuilder:
@@ -105,24 +111,31 @@ class StepBuilder:
             )
         ]
 
+    def _make_optimized_pynndb_edge_step(self, step0: PynndbStep, step1: PynndbStep, edge_type: EdgeType) -> PynndbFilterStep:
+        attrs_key = "end" if edge_type == EdgeType.IN else "start"
+        return PynndbFilterStep(
+            database=self._database,
+            what=step0.what._edge_class,
+            attrs={attrs_key: step0.attrs, **step1.attrs},
+            page_size=self._page_size,
+            txn=self._txn,
+        )
+
     addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):
-        return False, [
-            PynndbFilterStep(
-                database=self._database,
-                what=step0.what._edge_class,
-                attrs={"end": step0.attrs, **step1.attrs},
-                page_size=self._page_size,
-                txn=self._txn,
-            )
-        ]
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN)]
 
     addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT)]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):
         return False, [
-            PynndbFilterStep(
+            PynndbUnionStep(
                 database=self._database,
-                what=step0.what._edge_class,
-                attrs={"start": step0.attrs, **step1.attrs},
                 page_size=self._page_size,
+                steps=[
+                    self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN),
+                    self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT),
+                ],
                 txn=self._txn,
             )
         ]

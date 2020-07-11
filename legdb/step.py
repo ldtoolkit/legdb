@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC
-from itertools import islice, chain
+from itertools import islice
 from typing import Type, Any, Optional, Dict, Callable, Set, List, Collection, FrozenSet
 
 import lmdb
@@ -97,6 +97,9 @@ class PynndbStep(Step):
     def __setstate__(self, state):
         self.__dict__.update(state)
         self.txn = self.database.read_transaction
+
+    def __iter__(self):
+        raise NotImplementedError()
 
 
 class PynndbFilterStepBase(PynndbStep, ABC):
@@ -289,3 +292,25 @@ class PynndbEdgeAllStep(PynndbEdgeBaseStep):
     def input_node(self, node: Node) -> None:
         self.input_attrs(start_id=node.oid)
         self.input_attrs(end_id=node.oid)
+
+
+class PynndbUnionStep(PynndbStep):
+    def __init__(
+            self,
+            database: Database,
+            page_size: int,
+            steps: List[PynndbStep],
+            txn: lmdb.Transaction,
+    ):
+        super().__init__(database=database, page_size=page_size, txn=txn)
+        self.steps = steps
+        self.steps_iter = [iter(step) for step in self.steps]
+
+    def output(self) -> List[Entity]:
+        result = None
+        while not result and self.steps_iter:
+            step_iter = self.steps_iter[0]
+            result = [entity for entity in islice(step_iter, self.page_size) if self.process(entity)]
+            if not result:
+                self.steps_iter.pop(0)
+        return result

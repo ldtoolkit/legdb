@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0xd2560661
+# __coconut_hash__ = 0x88978a7c
 
 # Compiled with Coconut version 1.4.3 [Ernest Scribbler]
 
@@ -648,6 +648,7 @@ _coconut_MatchError, _coconut_count, _coconut_enumerate, _coconut_makedata, _coc
 
 # Compiled Coconut: -----------------------------------------------------------
 
+from enum import Enum
 from typing import Optional
 from typing import Type
 import os
@@ -667,6 +668,12 @@ from legdb.step import PynndbFilterStep
 from legdb.step import PynndbEdgeInStep
 from legdb.step import PynndbEdgeOutStep
 from legdb.step import PynndbEdgeAllStep
+from legdb.step import PynndbUnionStep
+
+
+class EdgeType(Enum):
+    IN = "in"
+    OUT = "out"
 
 
 class StepBuilder:
@@ -827,6 +834,11 @@ class StepBuilder:
         attrs = {**step0.attrs, **step1.attrs}
         return False, [PynndbFilterStep(database=self._database, what=step0.what, attrs=attrs, page_size=self._page_size, txn=self._txn)]
 
+    @_coconut_tco
+    def _make_optimized_pynndb_edge_step(self, step0: 'PynndbStep', step1: 'PynndbStep', edge_type: 'EdgeType') -> 'PynndbFilterStep':
+        attrs_key = "end" if edge_type == EdgeType.IN else "start"
+        return _coconut_tail_call(PynndbFilterStep, database=self._database, what=step0.what._edge_class, attrs={attrs_key: step0.attrs, **step1.attrs}, page_size=self._page_size, txn=self._txn)
+
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
     def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
@@ -848,7 +860,7 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return False, [PynndbFilterStep(database=self._database, what=step0.what._edge_class, attrs={"end": step0.attrs, **step1.attrs}, page_size=self._page_size, txn=self._txn)]
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
@@ -871,7 +883,30 @@ class StepBuilder:
             _coconut_match_err.value = _coconut_match_to_args
             raise _coconut_match_err
 
-        return False, [PynndbFilterStep(database=self._database, what=step0.what._edge_class, attrs={"start": step0.attrs, **step1.attrs}, page_size=self._page_size, txn=self._txn)]
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT)]
+
+    @_coconut_addpattern(_compile)
+    @_coconut_mark_as_match
+    def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
+        _coconut_match_check = False
+        _coconut_FunctionMatchError = _coconut_get_function_match_error()
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 2) and (_coconut.isinstance(_coconut_match_to_args[1][0], PynndbFilterStep)) and (_coconut.isinstance(_coconut_match_to_args[1][1], PynndbEdgeAllStep)):
+            _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
+            step0 = _coconut_match_to_args[1][0]
+            step1 = _coconut_match_to_args[1][1]
+            if not _coconut_match_to_kwargs:
+                self = _coconut_match_temp_0
+                _coconut_match_check = True
+        if _coconut_match_check and not ((issubclass)(step0.what, Node)):
+            _coconut_match_check = False
+        if not _coconut_match_check:
+            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
+            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
+            _coconut_match_err.pattern = 'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):'
+            _coconut_match_err.value = _coconut_match_to_args
+            raise _coconut_match_err
+
+        return False, [PynndbUnionStep(database=self._database, page_size=self._page_size, steps=[self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN), self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT),], txn=self._txn)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match
