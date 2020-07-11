@@ -86,6 +86,7 @@ class Entity(DataClassDictMixin):
 @dataclass
 class Node(Entity):
     table_name = "node"
+    _edge_class = None
 
 
 @dataclass

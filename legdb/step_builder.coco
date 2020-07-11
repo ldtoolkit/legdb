@@ -105,6 +105,28 @@ class StepBuilder:
             )
         ]
 
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):
+        return False, [
+            PynndbFilterStep(
+                database=self._database,
+                what=step0.what._edge_class,
+                attrs={"end": step0.attrs, **step1.attrs},
+                page_size=self._page_size,
+                txn=self._txn,
+            )
+        ]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):
+        return False, [
+            PynndbFilterStep(
+                database=self._database,
+                what=step0.what._edge_class,
+                attrs={"start": step0.attrs, **step1.attrs},
+                page_size=self._page_size,
+                txn=self._txn,
+            )
+        ]
+
     addpattern def _compile(self, steps):
         return True, steps
 
