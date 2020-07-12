@@ -64,7 +64,6 @@ class Database:
         self._db = pynndb.Database()
         if config is None:
             config = {}
-        config.setdefault("max_readers", 2048)
         # config["readonly"] = self._db_open_mode == DbOpenMode.READ
         self._config = config
         self._db.configure(self._config)
