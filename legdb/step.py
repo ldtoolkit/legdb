@@ -144,7 +144,7 @@ class PynndbFilterStepBase(PynndbStep, ABC):
 
     def create_filter_func(self, doc: pynndb.Doc, attr_names: Set[str]) -> Callable[[pynndb.Doc], bool]:
         def filter_func(result_doc: pynndb.Doc):
-            for attr in self.attrs_to_check[attr_names]:
+            for attr in self.database._attrs_to_check_by_attr_names[attr_names]:
                 if "[" in attr and "]" in attr:
                     attr0, attr1 = attr.replace("[", " ").replace("]", " ").split()
                     if result_doc[attr0][attr1] != doc[attr0][attr1]:
@@ -169,7 +169,7 @@ class PynndbFilterStepBase(PynndbStep, ABC):
 
     def select_index_and_filter_func(self, doc: pynndb.Doc):
         attr_names = self.get_attr_names(doc)
-        attrs_to_check = self.attrs_to_check.get(attr_names)
+        attrs_to_check = self.database._attrs_to_check_by_attr_names.get(attr_names)
         if attrs_to_check is None:
             relevant_indexes = {}
             for index_name in self.table.indexes(txn=self.txn):
@@ -177,16 +177,19 @@ class PynndbFilterStepBase(PynndbStep, ABC):
                     relevant_indexes[index_name] = self.count(index_name=index_name, doc=doc)
 
             if relevant_indexes:
-                self.index_names[attr_names] = min(relevant_indexes, key=relevant_indexes.get)
-                self.attrs_to_check[attr_names] = (
-                        attr_names - self.database._index_attrs[(self.what.table_name, self.index_names[attr_names])]
-                )
+                self.database._index_names_by_attr_names[attr_names] = min(relevant_indexes, key=relevant_indexes.get)
+                self.database._attrs_to_check_by_attr_names[attr_names] = (
+                        attr_names - self.database._index_attrs[
+                    (self.what.table_name, self.database._index_names_by_attr_names[attr_names])
+                ])
             else:
-                self.index_names[attr_names] = None
-                self.attrs_to_check[attr_names] = attr_names
+                self.database._index_names_by_attr_names[attr_names] = None
+                self.database._attrs_to_check_by_attr_names[attr_names] = attr_names
 
-        index_name = self.index_names[attr_names]
-        filter_func = self.create_filter_func(doc, attr_names) if self.attrs_to_check else None
+        index_name = self.database._index_names_by_attr_names[attr_names]
+        filter_func = (self.create_filter_func(doc, attr_names)
+                       if self.database._attrs_to_check_by_attr_names[attr_names] else
+                       None)
         return index_name, filter_func
 
 

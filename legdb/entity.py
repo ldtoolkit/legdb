@@ -125,7 +125,7 @@ class Edge(Entity):
         d = dict(doc)
         start = cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS)
         end = cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS)
-        result = super().from_doc(doc=doc, db=db, txn=txn)
+        result = super().from_doc(doc=doc, txn=txn)
         result.start = start
         result.end = end
         return result

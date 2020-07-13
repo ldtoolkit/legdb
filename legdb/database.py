@@ -69,6 +69,8 @@ class Database:
         self._db.configure(self._config)
         self._db.open(str(self._path))
         self._index_attrs = {}
+        self._index_names_by_attr_names = {}
+        self._attrs_to_check_by_attr_names = {}
         open_tables(self._db)
 
     def __getstate__(self):
