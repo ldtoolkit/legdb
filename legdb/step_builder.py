@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0x88978a7c
+# __coconut_hash__ = 0xb26bd238
 
-# Compiled with Coconut version 1.4.3 [Ernest Scribbler]
+# Compiled with Coconut version 1.4.3-post_dev35 [Ernest Scribbler]
 
 # Coconut Header: -------------------------------------------------------------
 
@@ -10,7 +10,7 @@ from __future__ import generator_stop, annotations
 import sys as _coconut_sys
 from builtins import chr, filter, hex, input, int, map, object, oct, open, print, range, str, zip, filter, reversed, enumerate
 py_chr, py_hex, py_input, py_int, py_map, py_object, py_oct, py_open, py_print, py_range, py_str, py_zip, py_filter, py_reversed, py_enumerate, py_repr = chr, hex, input, int, map, object, oct, open, print, range, str, zip, filter, reversed, enumerate, repr
-_coconut_str = str
+_coconut_py_str = str
 class _coconut:
     import collections, copy, functools, types, itertools, operator, threading, weakref, os, warnings
     import pickle
@@ -20,11 +20,34 @@ class _coconut:
     else:
         import collections.abc as abc
     import typing
-    Ellipsis, Exception, AttributeError, ImportError, IndexError, KeyError, NameError, TypeError, ValueError, StopIteration, classmethod, dict, enumerate, filter, float, frozenset, getattr, hasattr, hash, id, int, isinstance, issubclass, iter, len, list, locals, map, min, max, next, object, property, range, reversed, set, slice, str, sum, super, tuple, type, zip, repr = Ellipsis, Exception, AttributeError, ImportError, IndexError, KeyError, NameError, TypeError, ValueError, StopIteration, classmethod, dict, enumerate, filter, float, frozenset, getattr, hasattr, hash, id, int, isinstance, issubclass, iter, len, list, locals, map, min, max, next, object, property, range, reversed, set, slice, str, sum, super, tuple, type, zip, repr
+    Ellipsis, NotImplemented, Exception, AttributeError, ImportError, IndexError, KeyError, NameError, TypeError, ValueError, StopIteration, classmethod, dict, enumerate, filter, float, frozenset, getattr, hasattr, hash, id, int, isinstance, issubclass, iter, len, list, locals, map, min, max, next, object, property, range, reversed, set, slice, str, sum, super, tuple, type, zip, repr = Ellipsis, NotImplemented, Exception, AttributeError, ImportError, IndexError, KeyError, NameError, TypeError, ValueError, StopIteration, classmethod, dict, enumerate, filter, float, frozenset, getattr, hasattr, hash, id, int, isinstance, issubclass, iter, len, list, locals, map, min, max, next, object, property, range, reversed, set, slice, str, sum, super, tuple, type, zip, repr
 _coconut_sentinel = _coconut.object()
 class MatchError(Exception):
-    """Pattern-matching error. Has attributes .pattern and .value."""
-    __slots__ = ("pattern", "value")
+    """Pattern-matching error. Has attributes .pattern, .value, and .message."""
+    __slots__ = ("pattern", "value", "_message")
+    max_val_repr_len = 500
+    def __init__(self, pattern, value):
+        self.pattern = pattern
+        self.value = value
+        self._message = None
+    @property
+    def message(self):
+        if self._message is None:
+            value_repr = _coconut.repr(self.value)
+            self._message = "pattern-matching failed for %s in %s" % (_coconut.repr(self.pattern), value_repr if _coconut.len(value_repr) <= self.max_val_repr_len else value_repr[:self.max_val_repr_len] + "...")
+            super(MatchError, self).__init__(self._message)
+        return self._message
+    def __repr__(self):
+        self.message
+        return super(MatchError, self).__repr__()
+    def __str__(self):
+        self.message
+        return super(MatchError, self).__str__()
+    def __unicode__(self):
+        self.message
+        return super(MatchError, self).__unicode__()
+    def __reduce__(self):
+        return (self.__class__, (self.pattern, self.value))
 class _coconut_tail_call:
     __slots__ = ("func", "args", "kwargs")
     def __init__(self, func, *args, **kwargs):
@@ -49,7 +72,7 @@ def _coconut_tco(func):
     _coconut_tco_func_dict[_coconut.id(tail_call_optimized_func)] = _coconut.weakref.ref(tail_call_optimized_func)
     return tail_call_optimized_func
 def _coconut_igetitem(iterable, index):
-    if isinstance(iterable, (_coconut_reversed, _coconut_map, _coconut.zip, _coconut_enumerate, _coconut_count, _coconut.abc.Sequence)):
+    if _coconut.isinstance(iterable, (_coconut_reversed, _coconut_map, _coconut.zip, _coconut_enumerate, _coconut_count, _coconut.abc.Sequence)):
         return iterable[index]
     if not _coconut.isinstance(index, _coconut.slice):
         if index < 0:
@@ -104,6 +127,9 @@ def _coconut_dubstar_pipe(kws, f): return f(**kws)
 def _coconut_back_pipe(f, x): return f(x)
 def _coconut_back_star_pipe(f, xs): return f(*xs)
 def _coconut_back_dubstar_pipe(f, kws): return f(**kws)
+def _coconut_none_pipe(x, f): return None if x is None else f(x)
+def _coconut_none_star_pipe(xs, f): return None if xs is None else f(*xs)
+def _coconut_none_dubstar_pipe(kws, f): return None if kws is None else f(**kws)
 def _coconut_assert(cond, msg=None): assert cond, msg if msg is not None else "(assert) got falsey value " + _coconut.repr(cond)
 def _coconut_bool_and(a, b): return a and b
 def _coconut_bool_or(a, b): return a or b
@@ -494,7 +520,7 @@ class _coconut_base_pattern_func:
     __slots__ = ("FunctionMatchError", "__doc__", "patterns")
     _coconut_is_match = True
     def __init__(self, *funcs):
-        self.FunctionMatchError = _coconut.type(_coconut_str("MatchError"), (_coconut_MatchError,), {})
+        self.FunctionMatchError = _coconut.type(_coconut_py_str("MatchError"), (_coconut_MatchError,), {})
         self.__doc__ = None
         self.patterns = []
         for func in funcs:
@@ -724,11 +750,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'match def _compile(self):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'match def _compile(self):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('match def _compile(self):', _coconut_match_to_args)
 
         raise NotImplementedError()
 
@@ -744,11 +766,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is SourceStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is SourceStep, )):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step is SourceStep, )):', _coconut_match_to_args)
 
         return True, [PynndbFilterStep(database=self._database, what=step.what, attrs={}, page_size=self._page_size, txn=self._txn)]
 
@@ -764,11 +782,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeInStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeInStep, )):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step is EdgeInStep, )):', _coconut_match_to_args)
 
         return True, [PynndbEdgeInStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
@@ -784,11 +798,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeOutStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeOutStep, )):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step is EdgeOutStep, )):', _coconut_match_to_args)
 
         return True, [PynndbEdgeOutStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
@@ -804,11 +814,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step is EdgeAllStep, )):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step is EdgeAllStep, )):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step is EdgeAllStep, )):', _coconut_match_to_args)
 
         return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
 
@@ -825,11 +831,7 @@ class StepBuilder:
                 self = _coconut_match_temp_0
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):', _coconut_match_to_args)
 
         attrs = {**step0.attrs, **step1.attrs}
         return False, [PynndbFilterStep(database=self._database, what=step0.what, attrs=attrs, page_size=self._page_size, txn=self._txn)]
@@ -854,11 +856,7 @@ class StepBuilder:
         if _coconut_match_check and not ((issubclass)(step0.what, Node)):
             _coconut_match_check = False
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):', _coconut_match_to_args)
 
         return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN)]
 
@@ -877,11 +875,7 @@ class StepBuilder:
         if _coconut_match_check and not ((issubclass)(step0.what, Node)):
             _coconut_match_check = False
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):', _coconut_match_to_args)
 
         return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT)]
 
@@ -900,11 +894,7 @@ class StepBuilder:
         if _coconut_match_check and not ((issubclass)(step0.what, Node)):
             _coconut_match_check = False
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):', _coconut_match_to_args)
 
         return False, [PynndbUnionStep(database=self._database, page_size=self._page_size, steps=[self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN), self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT),], txn=self._txn)]
 
@@ -921,11 +911,7 @@ class StepBuilder:
                 steps = _coconut_match_temp_1
                 _coconut_match_check = True
         if not _coconut_match_check:
-            _coconut_match_val_repr = _coconut.repr(_coconut_match_to_args)
-            _coconut_match_err = _coconut_FunctionMatchError("pattern-matching failed for " "'addpattern def _compile(self, steps):'" " in " + (_coconut_match_val_repr if _coconut.len(_coconut_match_val_repr) <= 500 else _coconut_match_val_repr[:500] + "..."))
-            _coconut_match_err.pattern = 'addpattern def _compile(self, steps):'
-            _coconut_match_err.value = _coconut_match_to_args
-            raise _coconut_match_err
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, steps):', _coconut_match_to_args)
 
         return True, steps
 
