@@ -127,11 +127,16 @@ class Edge(Entity):
         if doc is None:
             return None
         d = dict(doc)
+
         fields = fields or {}
-        fields.update(
-            start=cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS),
-            end=cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS),
-        )
+        start = cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS)
+        start.oid = d["start_id"]
+        start.connect(db, txn=txn)
+        end = cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS)
+        end.oid = d["end_id"]
+        end.connect(db, txn=txn)
+        fields.update(start=start, end=end)
+
         result = super().from_doc(doc=doc, db=db, fields=fields, txn=txn)
         return result
 
