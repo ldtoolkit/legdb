@@ -65,6 +65,7 @@ class Entity(DataClassDictMixin):
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
+        fields = fields or {}
         for field_name, field_value in fields.items():
             setattr(result, field_name, field_value)
         result.oid = doc.key
