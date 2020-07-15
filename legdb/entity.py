@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, InitVar, field
-from typing import Optional, Callable, Dict, Mapping, TypeVar, Type, TYPE_CHECKING
+from typing import Optional, Callable, Dict, Mapping, TypeVar, Type, TYPE_CHECKING, Any
 
 from pynndb import Doc
 from mashumaro.serializer.base import DataClassDictMixin
@@ -59,11 +59,14 @@ class Entity(DataClassDictMixin):
             cls: Type[T],
             doc: Optional[Doc],
             db: Optional[Database] = None,
-            txn: Optional[Transaction] = None
+            fields: Optional[Dict[str, Any]] = None,
+            txn: Optional[Transaction] = None,
     ) -> Optional[T]:
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
+        for field_name, field_value in fields.items():
+            setattr(result, field_name, field_value)
         result.oid = doc.key
         result.connect(db, txn=txn)
         return result
@@ -118,15 +121,17 @@ class Edge(Entity):
             cls: Type[T],
             doc: Optional[Doc],
             db: Optional[Database] = None,
-            txn: Optional[Transaction] = None
+            fields: Optional[Dict[str, Any]] = None,
+            txn: Optional[Transaction] = None,
     ) -> Optional[T]:
         if doc is None:
             return None
         d = dict(doc)
-        start = cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS)
-        end = cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS)
-        result = super().from_doc(doc=doc, txn=txn)
-        result.start = start
-        result.end = end
+        fields = fields or {}
+        fields.update(
+            start=cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS),
+            end=cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS),
+        )
+        result = super().from_doc(doc=doc, db=db, fields=fields, txn=txn)
         return result
 
