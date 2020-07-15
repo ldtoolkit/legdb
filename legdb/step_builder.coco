@@ -5,8 +5,8 @@ import os
 import lmdb
 
 from legdb import Database, Entity, Node, Edge
-from legdb.step import SourceStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
-from legdb.step import PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep, PynndbUnionStep
+from legdb.step import SourceStep, GetStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
+from legdb.step import PynndbGetStep, PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep, PynndbUnionStep
 
 
 class EdgeType(Enum):
@@ -37,6 +37,10 @@ class StepBuilder:
             raise ValueError("Step 'source' should be the first.")
 
         self._steps.append(SourceStep(what=what))
+        return self
+
+    def get(self, *ids) -> StepBuilder:
+        self._steps.append(GetStep(*ids))
         return self
 
     def has(self, **kwargs) -> StepBuilder:
@@ -98,6 +102,17 @@ class StepBuilder:
             page_size=self._page_size,
             txn=self._txn,
         )]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is GetStep)):
+        return False, [
+            PynndbGetStep(
+                database=self._database,
+                what=step0.what,
+                page_size=self._page_size,
+                txn=self._txn,
+                ids=step1.ids,
+            )
+        ]
 
     addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):
         attrs = {**step0.attrs, **step1.attrs}

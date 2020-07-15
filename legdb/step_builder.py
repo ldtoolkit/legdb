@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# __coconut_hash__ = 0xb26bd238
+# __coconut_hash__ = 0x942a11a4
 
 # Compiled with Coconut version 1.4.3-post_dev35 [Ernest Scribbler]
 
@@ -686,10 +686,12 @@ from legdb import Entity
 from legdb import Node
 from legdb import Edge
 from legdb.step import SourceStep
+from legdb.step import GetStep
 from legdb.step import HasStep
 from legdb.step import EdgeInStep
 from legdb.step import EdgeOutStep
 from legdb.step import EdgeAllStep
+from legdb.step import PynndbGetStep
 from legdb.step import PynndbFilterStep
 from legdb.step import PynndbEdgeInStep
 from legdb.step import PynndbEdgeOutStep
@@ -718,6 +720,10 @@ class StepBuilder:
             raise ValueError("Step 'source' should be the first.")
 
         self._steps.append(SourceStep(what=what))
+        return self
+
+    def get(self, *ids) -> 'StepBuilder':
+        self._steps.append(GetStep(*ids))
         return self
 
     def has(self, **kwargs) -> 'StepBuilder':
@@ -817,6 +823,23 @@ class StepBuilder:
             raise _coconut_FunctionMatchError('addpattern def _compile(self, (step is EdgeAllStep, )):', _coconut_match_to_args)
 
         return True, [PynndbEdgeAllStep(database=self._database, what=self._edge_cls, attrs=step.attrs, page_size=self._page_size, txn=self._txn)]
+
+    @_coconut_addpattern(_compile)
+    @_coconut_mark_as_match
+    def _compile(*_coconut_match_to_args, **_coconut_match_to_kwargs):
+        _coconut_match_check = False
+        _coconut_FunctionMatchError = _coconut_get_function_match_error()
+        if (_coconut.len(_coconut_match_to_args) == 2) and ("self" not in _coconut_match_to_kwargs) and (_coconut.isinstance(_coconut_match_to_args[1], _coconut.abc.Sequence)) and (_coconut.len(_coconut_match_to_args[1]) == 2) and (_coconut.isinstance(_coconut_match_to_args[1][0], PynndbFilterStep)) and (_coconut.isinstance(_coconut_match_to_args[1][1], GetStep)):
+            _coconut_match_temp_0 = _coconut_match_to_args[0] if _coconut.len(_coconut_match_to_args) > 0 else _coconut_match_to_kwargs.pop("self")
+            step0 = _coconut_match_to_args[1][0]
+            step1 = _coconut_match_to_args[1][1]
+            if not _coconut_match_to_kwargs:
+                self = _coconut_match_temp_0
+                _coconut_match_check = True
+        if not _coconut_match_check:
+            raise _coconut_FunctionMatchError('addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is GetStep)):', _coconut_match_to_args)
+
+        return False, [PynndbGetStep(database=self._database, what=step0.what, page_size=self._page_size, txn=self._txn, ids=step1.ids)]
 
     @_coconut_addpattern(_compile)
     @_coconut_mark_as_match

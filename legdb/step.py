@@ -38,6 +38,16 @@ class SourceStep(Step):
         return self.what.table_name
 
 
+class GetStep(Step):
+    def __init__(self, *args) -> None:
+        super().__init__()
+        self.ids = args
+
+    def __repr__(self) -> str:
+        ids_str = ", ".join(f"{oid!r}" for oid in self.ids)
+        return f"get({ids_str})"
+
+
 def _attrs_str(attrs: Dict[str, Any]) -> str:
     return ", ".join(f"{key}={value!r}" for key, value in attrs.items())
 
@@ -100,6 +110,30 @@ class PynndbStep(Step):
 
     def __iter__(self):
         raise NotImplementedError()
+
+
+class PynndbGetStep(PynndbStep):
+    def __init__(
+            self,
+            database: Database,
+            what: Type[Entity],
+            page_size: int,
+            txn: lmdb.Transaction,
+            ids: Optional[List[str]] = None,
+    ) -> None:
+        super().__init__(database=database, page_size=page_size, txn=txn)
+        self.ids = ids
+        self.what = what
+        self.table: pynndb.Table = self.database._db.table(table_name=self.what.table_name, txn=self.txn)
+        self.iter = iter(self)
+
+    def __iter__(self):
+        get_result = (self.table.get(oid, txn=self.txn) for oid in self.ids)
+        result = (self.what.from_doc(doc=doc, db=self.database, txn=self.txn) for doc in get_result)
+        yield from (entity for entity in result if self.process(entity))
+
+    def output(self) -> List[Entity]:
+        return list(islice(self.iter, self.page_size))
 
 
 class PynndbFilterStepBase(PynndbStep, ABC):
