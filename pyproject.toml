@@ -7,7 +7,6 @@ license = "Apache-2.0"
 
 [tool.poetry.dependencies]
 python = "^3.6"
-joblib = "^0.15.1"
 more-itertools = "^8.3.0"
 ordered-set = "^4.0.1"
 coconut-develop = "1.4.3.post0.dev35"  # Contains bugfix for pattern matching

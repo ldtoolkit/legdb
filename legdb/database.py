@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import functools
-import os
 from enum import Enum
 from pathlib import Path
 from typing import Union, Optional, Mapping, Any, Generator, List, TYPE_CHECKING, Type, TypeVar, Callable, Collection
 
 import pynndb
-from joblib import Parallel
 from pynndb import write_transaction
 
 from legdb import entity
