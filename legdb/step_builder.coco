@@ -1,0 +1,200 @@
+from enum import Enum
+from typing import Optional, Type
+import os
+
+import lmdb
+
+from legdb import Database, Entity, Node, Edge
+from legdb.step import SourceStep, GetStep, HasStep, EdgeInStep, EdgeOutStep, EdgeAllStep
+from legdb.step import PynndbGetStep, PynndbFilterStep, PynndbEdgeInStep, PynndbEdgeOutStep, PynndbEdgeAllStep, PynndbUnionStep
+
+
+class EdgeType(Enum):
+    IN = "in"
+    OUT = "out"
+
+
+class StepBuilder:
+    def __init__(
+            self,
+            database: Optional[Database] = None,
+            node_cls: Type[Entity] = Node,
+            edge_cls: Type[Entity] = Edge,
+            page_size: int = 65536,
+            txn: Optional[lmdb.Transaction] = None,
+    ) -> None:
+        self._compiled_steps = []
+        self._database = database
+        self._edge_cls = edge_cls
+        self._is_compiled = False
+        self._node_cls = node_cls
+        self._page_size = page_size
+        self._steps = []
+        self._txn = txn
+
+    def source(self, what: Type[Entity]) -> StepBuilder:
+        if self._steps:
+            raise ValueError("Step 'source' should be the first.")
+
+        self._steps.append(SourceStep(what=what))
+        return self
+
+    def get(self, *ids) -> StepBuilder:
+        self._steps.append(GetStep(*ids))
+        return self
+
+    def has(self, **kwargs) -> StepBuilder:
+        self._steps.append(HasStep(**kwargs))
+        return self
+
+    def edge_in(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeInStep(**kwargs))
+        return self
+
+    def edge_out(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeOutStep(**kwargs))
+        return self
+
+    def edge_all(self, **kwargs) -> StepBuilder:
+        self._steps.append(EdgeAllStep(**kwargs))
+        return self
+
+    def __repr__(self) -> str:
+        return ".".join(repr(step) for step in self._steps)
+    
+    match def _compile(self):
+        raise NotImplementedError()
+
+    addpattern def _compile(self, (step is SourceStep, )):
+        return True, [
+            PynndbFilterStep(
+                database=self._database, 
+                what=step.what, 
+                attrs={}, 
+                page_size=self._page_size,
+                txn=self._txn, 
+            )
+        ]
+
+    addpattern def _compile(self, (step is EdgeInStep, )):
+        return True, [PynndbEdgeInStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        )]
+
+    addpattern def _compile(self, (step is EdgeOutStep, )):
+        return True, [PynndbEdgeOutStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        )]
+
+    addpattern def _compile(self, (step is EdgeAllStep, )):
+        return True, [PynndbEdgeAllStep(
+            database=self._database,
+            what=self._edge_cls,
+            attrs=step.attrs,
+            page_size=self._page_size,
+            txn=self._txn,
+        )]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is GetStep)):
+        return False, [
+            PynndbGetStep(
+                database=self._database,
+                what=step0.what,
+                page_size=self._page_size,
+                txn=self._txn,
+                ids=step1.ids,
+            )
+        ]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is HasStep)):
+        attrs = {**step0.attrs, **step1.attrs}
+        return False, [
+            PynndbFilterStep(
+                database=self._database,
+                what=step0.what,
+                attrs=attrs,
+                page_size=self._page_size,
+                txn=self._txn,
+            )
+        ]
+
+    def _make_optimized_pynndb_edge_step(self, step0: PynndbStep, step1: PynndbStep, edge_type: EdgeType) -> PynndbFilterStep:
+        attrs_key = "end" if edge_type == EdgeType.IN else "start"
+        return PynndbFilterStep(
+            database=self._database,
+            what=step0.what._edge_class,
+            attrs={attrs_key: step0.attrs, **step1.attrs},
+            page_size=self._page_size,
+            txn=self._txn,
+        )
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeInStep) if step0.what `issubclass` Node):
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN)]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeOutStep) if step0.what `issubclass` Node):
+        return False, [self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT)]
+
+    addpattern def _compile(self, (step0 is PynndbFilterStep, step1 is PynndbEdgeAllStep) if step0.what `issubclass` Node):
+        return False, [
+            PynndbUnionStep(
+                database=self._database,
+                page_size=self._page_size,
+                steps=[
+                    self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.IN),
+                    self._make_optimized_pynndb_edge_step(step0, step1, EdgeType.OUT),
+                ],
+                txn=self._txn,
+            )
+        ]
+
+    addpattern def _compile(self, steps):
+        return True, steps
+
+    def _compile_all(self) -> None:
+        if self._is_compiled:
+            return
+        self._compiled_steps = []
+        max_step_count_for_compiled_step = 2
+        steps = self._steps
+        for step_count in range(1, max_step_count_for_compiled_step + 1):
+            i = 0
+            j = i + step_count
+            while i < len(steps):
+                steps_window = steps[i:j]
+                go_forward, new_steps = self._compile(steps_window)
+                steps = steps[:i] + new_steps + steps[j:]
+                if go_forward:
+                    i += 1
+                    j += 1
+        self._compiled_steps = steps
+        self._is_compiled = True
+
+    def __iter__(self):
+        self._compile_all()
+        last = len(self._compiled_steps) - 1
+        exhausted = False
+        entities = None
+        i = 0
+        while not exhausted:
+            step = self._compiled_steps[i]
+            if i > 0 and entities:
+                step.input(entities)
+            entities = step.output()
+            if not entities:
+                i -= 1
+                if i < 0:
+                    exhausted = True
+            else:
+                if i < last:
+                    i += 1
+                    self._compiled_steps[i].reset_iter()
+                else:
+                    yield from entities

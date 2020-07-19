@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, InitVar, field
-from typing import Optional, Callable, Dict, Mapping, TypeVar, Type, TYPE_CHECKING
+from typing import Optional, Callable, Dict, Mapping, TypeVar, Type, TYPE_CHECKING, Any
 
 from pynndb import Doc
 from mashumaro.serializer.base import DataClassDictMixin
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_DICT_PARAMS = {
-    "use_bytes": True,
+    "use_bytes": False,
     "use_enum": False,
     "use_datetime": False
 }
@@ -25,37 +25,33 @@ T = TypeVar("T", bound="Entity")
 
 @dataclass
 class Entity(DataClassDictMixin):
-    oid: Optional[bytes] = field(default=None, repr=False)
-    db: InitVar[Optional[Database]] = None
-    _db = None
+    oid: Optional[str] = field(default=None, repr=False)
+    database: InitVar[Optional[Database]] = None
+    _database = None
     _skip_on_to_doc = []
     table_name = None
 
-    def __post_init__(self, db: Optional[Database]):
-        self.connect(db)
+    def __post_init__(self, database: Optional[Database]):
+        self.connect(database)
 
     @property
     def is_bound(self):
-        return self._db is not None
+        return self._database is not None
 
-    def connect(self, db: Optional[Database] = None, txn: Optional[Transaction] = None) -> None:
-        self._db = db
+    def connect(self, database: Optional[Database] = None, txn: Optional[Transaction] = None) -> None:
+        self._database = database
         if self.is_bound:
             self.load(txn=txn)
 
     def disconnect(self) -> None:
-        self._db = None
+        self._database = None
 
     def to_doc(self, dict_params: Optional[Mapping] = MappingProxyType({})) -> Doc:
         d = self.to_dict(**dict(DEFAULT_DICT_PARAMS, **dict_params))
         oid = d.pop("oid", None)
         for key in self._skip_on_to_doc:
             d.pop(key, None)
-        for key, value in d.items():
-            if isinstance(value, bytes):
-                d[key] = value.decode()
-        result = Doc(d)
-        result.oid = oid
+        result = Doc(d, oid)
         return result
 
     @classmethod
@@ -63,12 +59,16 @@ class Entity(DataClassDictMixin):
             cls: Type[T],
             doc: Optional[Doc],
             db: Optional[Database] = None,
-            txn: Optional[Transaction] = None
+            fields: Optional[Dict[str, Any]] = None,
+            txn: Optional[Transaction] = None,
     ) -> Optional[T]:
         if doc is None:
             return None
         result = cls.from_dict(dict(doc), **DEFAULT_DICT_PARAMS)
-        result.oid = doc.oid
+        fields = fields or {}
+        for field_name, field_value in fields.items():
+            setattr(result, field_name, field_value)
+        result.oid = doc.key
         result.connect(db, txn=txn)
         return result
 
@@ -84,35 +84,60 @@ class Entity(DataClassDictMixin):
 
     def save(self, txn: Optional[Transaction] = None) -> None:
         self._raise_when_unbound()
-        self._db.save(self, txn=txn)
+        self._database.save(self, txn=txn)
 
 
 @dataclass
 class Node(Entity):
     table_name = "node"
+    _edge_class = None
 
 
 @dataclass
 class Edge(Entity):
     start: Optional[Node] = None
     end: Optional[Node] = None
-    start_id: Optional[bytes] = field(default=None, repr=False)
-    end_id: Optional[bytes] = field(default=None, repr=False)
+    start_id: Optional[str] = field(default=None, repr=False)
+    end_id: Optional[str] = field(default=None, repr=False)
     has: Optional[Node] = field(default=None, repr=False)
     table_name = "edge"
-    _skip_on_to_doc = ["start", "end"]
     _node_class = None
 
-    def __post_init__(self, db: Optional[Database] = None):
+    def __post_init__(self, database: Optional[Database] = None):
         if self.start is not None and self.start_id is None:
             self.start_id = self.start.oid
         if self.end is not None and self.end_id is None:
             self.end_id = self.end.oid
-        super().__post_init__(db=db)
+        super().__post_init__(database=database)
 
     def load(self, txn: Optional[Transaction] = None) -> None:
         super().load(txn=txn)
         if (self.start is None or self.start == Node()) and self.start_id is not None:
-            self.start = self._node_class.from_doc(self._db.node_table.get(oid=self.start_id, txn=txn), txn=txn)
+            self.start = self._node_class.from_doc(self._database.node_table.get(oid=self.start_id, txn=txn), txn=txn)
         if (self.end is None or self.end == Node()) and self.end_id is not None:
-            self.end = self._node_class.from_doc(self._db.node_table.get(oid=self.end_id, txn=txn), txn=txn)
+            self.end = self._node_class.from_doc(self._database.node_table.get(oid=self.end_id, txn=txn), txn=txn)
+
+    @classmethod
+    def from_doc(
+            cls: Type[T],
+            doc: Optional[Doc],
+            db: Optional[Database] = None,
+            fields: Optional[Dict[str, Any]] = None,
+            txn: Optional[Transaction] = None,
+    ) -> Optional[T]:
+        if doc is None:
+            return None
+        d = dict(doc)
+
+        fields = fields or {}
+        start = cls._node_class.from_dict(d.pop("start"), **DEFAULT_DICT_PARAMS)
+        start.oid = d["start_id"]
+        start.connect(db, txn=txn)
+        end = cls._node_class.from_dict(d.pop("end"), **DEFAULT_DICT_PARAMS)
+        end.oid = d["end_id"]
+        end.connect(db, txn=txn)
+        fields.update(start=start, end=end)
+
+        result = super().from_doc(doc=doc, db=db, fields=fields, txn=txn)
+        return result
+

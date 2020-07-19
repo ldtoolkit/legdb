@@ -1,0 +1,51 @@
+[[package]]
+category = "main"
+description = "Simple, elegant, Pythonic functional programming."
+name = "coconut-develop"
+optional = false
+python-versions = "*"
+version = "1.4.3.post0.dev35"
+
+[[package]]
+category = "main"
+description = "Lightweight pipelining: using Python functions as pipeline jobs."
+name = "joblib"
+optional = false
+python-versions = ">=3.6"
+version = "0.15.1"
+
+[[package]]
+category = "main"
+description = "More routines for operating on iterables, beyond itertools"
+name = "more-itertools"
+optional = false
+python-versions = ">=3.5"
+version = "8.4.0"
+
+[[package]]
+category = "main"
+description = "A set that remembers its order, and allows looking up its items by their index in that order."
+name = "ordered-set"
+optional = false
+python-versions = ">=3.5"
+version = "4.0.2"
+
+[metadata]
+content-hash = "13cc1437f633a75c9a526a46152a3f6bf19597c64638673c0a2f60d19015717e"
+python-versions = "^3.6"
+
+[metadata.files]
+coconut-develop = [
+    {file = "coconut-develop-1.4.3.post0.dev35.tar.gz", hash = "sha256:8c12699a6d64f407764f40390a017a5666c0d00b3f96f3ac6dd8f35ea6d3a536"},
+]
+joblib = [
+    {file = "joblib-0.15.1-py3-none-any.whl", hash = "sha256:6825784ffda353cc8a1be573118085789e5b5d29401856b35b756645ab5aecb5"},
+    {file = "joblib-0.15.1.tar.gz", hash = "sha256:61e49189c84b3c5d99a969d314853f4d1d263316cc694bec17548ebaa9c47b6e"},
+]
+more-itertools = [
+    {file = "more-itertools-8.4.0.tar.gz", hash = "sha256:68c70cc7167bdf5c7c9d8f6954a7837089c6a36bf565383919bb595efb8a17e5"},
+    {file = "more_itertools-8.4.0-py3-none-any.whl", hash = "sha256:b78134b2063dd214000685165d81c154522c3ee0a1c0d4d113c80361c234c5a2"},
+]
+ordered-set = [
+    {file = "ordered-set-4.0.2.tar.gz", hash = "sha256:ba93b2df055bca202116ec44b9bead3df33ea63a7d5827ff8e16738b97f33a95"},
+]
